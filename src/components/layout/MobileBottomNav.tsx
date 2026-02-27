@@ -12,7 +12,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
   { icon: BookOpen, label: "Modules", path: "/modules" },
   { icon: MessageCircle, label: "AI Chat", path: "/chatbot" },
-  { icon: Heart, label: "Wellness", path: "/hygiene" },
+  { icon: Heart, label: "Doctors", path: "/doctors" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 

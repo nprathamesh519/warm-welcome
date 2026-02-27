@@ -2,7 +2,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { 
   Activity, Droplets, ChevronRight, Thermometer, TrendingUp,
-  Stethoscope, FileText, BookOpen, Sparkles, Loader2, Calendar,
+  Stethoscope, FileText, BookOpen, Loader2, Calendar,
   Heart, ArrowRight, Sun, Moon
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -16,7 +16,7 @@ const dashboardSections = [
   { icon: Stethoscope, title: "Find Doctors", description: "Connect with specialists", path: "/doctors", color: "text-teal", bgColor: "bg-teal/15" },
   { icon: BookOpen, title: "Health Resources", description: "Educational content", path: "/health-resources", color: "text-primary", bgColor: "bg-primary/15" },
   { icon: FileText, title: "Govt. Schemes", description: "Explore health benefits", path: "/schemes", color: "text-accent", bgColor: "bg-accent/15" },
-  { icon: Sparkles, title: "Hygiene Tips", description: "Wellness guidance", path: "/hygiene", color: "text-teal", bgColor: "bg-teal/15" },
+  
 ];
 
 const Dashboard = () => {

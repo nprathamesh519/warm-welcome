@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { NearbyDoctors } from "@/components/health/NearbyDoctors";
 import { HealthDisclaimer } from "@/components/health/HealthDisclaimer";
 import { MenopauseAssessmentForm } from "@/components/health/MenopauseAssessmentForm";
 import { MenopauseResultsDisplay } from "@/components/health/MenopauseResultsDisplay";
@@ -16,9 +16,7 @@ import {
   Heart,
   Flame,
   Moon,
-  Frown,
   Bone,
-  Stethoscope,
   Clock,
   Brain,
   Loader2
@@ -29,11 +27,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { predictMenopauseFromAPI, MenopauseInputData, MenopauseResult, MLPredictionMeta } from "@/lib/ml-predictions";
 
-type Step = "education" | "assessment" | "results" | "doctors";
+type Step = "education" | "assessment" | "results";
 
-const stepLabels = ["Learn", "Assess", "Results", "Consult"];
+const stepLabels = ["Learn", "Assess", "Results"];
 
 const MenopauseModule = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState<Step>("education");
   const [menopauseResult, setMenopauseResult] = useState<MenopauseResult | null>(null);
@@ -106,7 +105,7 @@ const MenopauseModule = () => {
     setMenopauseResult(null);
   };
 
-  const currentStepIndex = ["education", "assessment", "results", "doctors"].indexOf(currentStep);
+  const currentStepIndex = ["education", "assessment", "results"].indexOf(currentStep);
 
   const menopauseStages = [
     {
@@ -169,7 +168,7 @@ const MenopauseModule = () => {
             <div className="relative h-1 bg-muted rounded-full mt-4">
               <motion.div
                 initial={{ width: "0%" }}
-                animate={{ width: `${(currentStepIndex / 3) * 100}%` }}
+                animate={{ width: `${(currentStepIndex / 2) * 100}%` }}
                 className="absolute h-full bg-gradient-to-r from-teal to-primary rounded-full"
                 transition={{ duration: 0.5 }}
               />
@@ -398,43 +397,12 @@ const MenopauseModule = () => {
               )}
               <MenopauseResultsDisplay 
                 result={menopauseResult}
-                onFindDoctors={() => setCurrentStep("doctors")}
+                onFindDoctors={() => navigate("/doctors?source=assessment")}
                 onRestart={restartAssessment}
               />
             </div>
           )}
 
-          {/* Doctors Step */}
-          {currentStep === "doctors" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              <div className="text-center mb-10">
-                <div className="w-16 h-16 rounded-2xl bg-teal/20 flex items-center justify-center mx-auto mb-4">
-                  <Stethoscope className="w-8 h-8 text-teal" />
-                </div>
-                <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-4">
-                  Find Menopause Specialists
-                </h1>
-                <p className="text-muted-foreground">
-                  Connect with qualified gynecologists and menopause specialists
-                </p>
-              </div>
-
-              <NearbyDoctors specialty="Gynecologist" />
-
-              <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
-                <Button variant="outline" onClick={() => setCurrentStep("results")}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Results
-                </Button>
-                <Button variant="outline" onClick={restartAssessment}>
-                  Take Assessment Again
-                </Button>
-              </div>
-            </motion.div>
-          )}
         </div>
       </main>
       <Footer />

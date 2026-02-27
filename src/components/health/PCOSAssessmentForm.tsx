@@ -13,7 +13,6 @@ import {
   Heart, 
   Microscope,
   Sparkles,
-  TestTube,
   AlertTriangle,
   ShieldCheck
 } from "lucide-react";
@@ -24,7 +23,7 @@ interface PCOSAssessmentFormProps {
   onSubmit: (data: PCOSInputData) => void;
 }
 
-type FormStep = 'consent' | 'personal' | 'symptoms' | 'lifestyle' | 'clinical' | 'bloodwork';
+type FormStep = 'consent' | 'personal' | 'symptoms' | 'lifestyle' | 'clinical';
 
 export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
   const [step, setStep] = useState<FormStep>('consent');
@@ -52,13 +51,12 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
     insulin: 10,
   });
 
-  const steps: FormStep[] = ['consent', 'personal', 'symptoms', 'lifestyle', 'clinical', 'bloodwork'];
+  const steps: FormStep[] = ['consent', 'personal', 'symptoms', 'lifestyle', 'clinical'];
   const currentStepIndex = steps.indexOf(step);
 
   const updateField = <K extends keyof PCOSInputData>(field: K, value: PCOSInputData[K]) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
-      // Auto-calculate BMI when height or weight changes
       if (field === 'height' || field === 'weight') {
         const h = field === 'height' ? (value as number) : prev.height;
         const w = field === 'weight' ? (value as number) : prev.weight;
@@ -94,7 +92,6 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
     symptoms: Activity,
     lifestyle: Heart,
     clinical: Microscope,
-    bloodwork: TestTube,
   };
 
   const stepLabels: Record<FormStep, string> = {
@@ -103,7 +100,6 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
     symptoms: 'Symptoms',
     lifestyle: 'Lifestyle',
     clinical: 'Ultrasound Data',
-    bloodwork: 'Blood Test Report',
   };
 
   const canProceedFromConsent = consentChecked.reports && consentChecked.accuracy;
@@ -182,7 +178,7 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
                       I confirm that I am entering values from official medical reports
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Ultrasound (pelvic sonography) and blood hormone profile reports are required
+                      Ultrasound (pelvic sonography) report is required for accurate assessment
                     </p>
                   </div>
                 </div>
@@ -214,8 +210,7 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
 
             <div className="p-4 rounded-xl bg-muted/50">
               <p className="text-xs text-muted-foreground">
-                <strong>📋 Required Reports:</strong> Pelvic ultrasound (follicle count, endometrium thickness) 
-                and hormone profile blood test (LH, FSH, Testosterone, Insulin).
+                <strong>📋 Required Reports:</strong> Pelvic ultrasound (follicle count, endometrium thickness).
                 If you don't have these, please consult a gynecologist first.
               </p>
             </div>
@@ -475,118 +470,6 @@ export const PCOSAssessmentForm = ({ onSubmit }: PCOSAssessmentFormProps) => {
                 ⚠️ High follicle count detected ({formData.follicleLeft + formData.follicleRight} total). This may indicate polycystic ovaries.
               </div>
             )}
-          </div>
-        )}
-
-        {/* Blood Test Step */}
-        {step === 'bloodwork' && (
-          <div className="space-y-6">
-            <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20">
-              <p className="text-sm text-destructive font-medium">
-                🧪 Enter values from your hormone profile blood test. These are mandatory for accurate prediction.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="lh">LH (mIU/mL)</Label>
-                <Input
-                  id="lh"
-                  type="number"
-                  min={0.5}
-                  max={80}
-                  step={0.1}
-                  value={formData.lh}
-                  onChange={(e) => updateField('lh', Number(e.target.value))}
-                  placeholder="e.g., 10.5"
-                />
-                <p className="text-xs text-muted-foreground">Luteinizing Hormone • Normal: 2-15 mIU/mL</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="fsh">FSH (mIU/mL)</Label>
-                <Input
-                  id="fsh"
-                  type="number"
-                  min={0.5}
-                  max={80}
-                  step={0.1}
-                  value={formData.fsh}
-                  onChange={(e) => updateField('fsh', Number(e.target.value))}
-                  placeholder="e.g., 6.0"
-                />
-                <p className="text-xs text-muted-foreground">Follicle Stimulating Hormone • Normal: 3-10 mIU/mL</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="testosterone">Testosterone (ng/dL)</Label>
-                <Input
-                  id="testosterone"
-                  type="number"
-                  min={0}
-                  max={200}
-                  step={1}
-                  value={formData.testosterone}
-                  onChange={(e) => updateField('testosterone', Number(e.target.value))}
-                  placeholder="e.g., 30"
-                />
-                <p className="text-xs text-muted-foreground">Total Testosterone • Normal: 15-70 ng/dL</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="insulin">Insulin (µIU/mL)</Label>
-                <Input
-                  id="insulin"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={formData.insulin}
-                  onChange={(e) => updateField('insulin', Number(e.target.value))}
-                  placeholder="e.g., 10"
-                />
-                <p className="text-xs text-muted-foreground">Fasting Insulin • Normal: 2-25 µIU/mL</p>
-              </div>
-            </div>
-
-            {/* LH/FSH Ratio Alert */}
-            {formData.fsh > 0 && formData.lh / formData.fsh > 2 && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
-                ⚠️ LH/FSH ratio is {(formData.lh / formData.fsh).toFixed(1)} (elevated). A ratio above 2:1 is often associated with PCOS.
-              </div>
-            )}
-
-            {formData.testosterone > 70 && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
-                ⚠️ Testosterone level is elevated ({formData.testosterone} ng/dL). This is a common indicator of PCOS.
-              </div>
-            )}
-
-            {formData.insulin > 25 && (
-              <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-sm text-accent">
-                ⚠️ Insulin level is elevated ({formData.insulin} µIU/mL). This may indicate insulin resistance.
-              </div>
-            )}
-
-            {/* Summary Grid */}
-            <div className="grid grid-cols-4 gap-3 p-4 rounded-xl bg-muted/50">
-              <div className="text-center">
-                <div className="text-lg font-bold text-foreground">{formData.lh}</div>
-                <div className="text-xs text-muted-foreground">LH</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-bold text-foreground">{formData.fsh}</div>
-                <div className="text-xs text-muted-foreground">FSH</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-bold text-foreground">{formData.testosterone}</div>
-                <div className="text-xs text-muted-foreground">Testosterone</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-bold text-foreground">{formData.insulin}</div>
-                <div className="text-xs text-muted-foreground">Insulin</div>
-              </div>
-            </div>
           </div>
         )}
 
