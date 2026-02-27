@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { NearbyDoctors } from "@/components/health/NearbyDoctors";
 import { HealthDisclaimer } from "@/components/health/HealthDisclaimer";
 import { PCOSAssessmentForm } from "@/components/health/PCOSAssessmentForm";
 import { PCOSResultsDisplay } from "@/components/health/PCOSResultsDisplay";
@@ -16,8 +16,6 @@ import {
   AlertCircle,
   Heart,
   Scale,
-  Droplets,
-  Stethoscope,
   Brain,
   Loader2,
   TestTube,
@@ -32,11 +30,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { predictPCOSFromAPI, PCOSInputData, PCOSResult, MLPredictionMeta } from "@/lib/ml-predictions";
 
-type Step = "education" | "assessment" | "results" | "doctors";
+type Step = "education" | "assessment" | "results";
 
-const stepLabels = ["Learn", "Assess", "Results", "Consult"];
+const stepLabels = ["Learn", "Assess", "Results"];
 
 const PCOSModule = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState<Step>("education");
   const [pcosResult, setPcosResult] = useState<PCOSResult | null>(null);
@@ -109,7 +108,7 @@ const PCOSModule = () => {
     setPcosResult(null);
   };
 
-  const currentStepIndex = ["education", "assessment", "results", "doctors"].indexOf(currentStep);
+  const currentStepIndex = ["education", "assessment", "results"].indexOf(currentStep);
 
   return (
     <div className="min-h-screen bg-background">
@@ -145,7 +144,7 @@ const PCOSModule = () => {
             <div className="relative h-1 bg-muted rounded-full mt-4">
               <motion.div
                 initial={{ width: "0%" }}
-                animate={{ width: `${(currentStepIndex / 3) * 100}%` }}
+                animate={{ width: `${(currentStepIndex / 2) * 100}%` }}
                 className="absolute h-full bg-gradient-to-r from-accent to-teal rounded-full"
                 transition={{ duration: 0.5 }}
               />
@@ -416,43 +415,12 @@ const PCOSModule = () => {
               )}
               <PCOSResultsDisplay 
                 result={pcosResult}
-                onFindDoctors={() => setCurrentStep("doctors")}
+                onFindDoctors={() => navigate("/doctors?source=assessment")}
                 onRestart={restartAssessment}
               />
             </div>
           )}
 
-          {/* Doctors Step */}
-          {currentStep === "doctors" && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              <div className="text-center mb-10">
-                <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Stethoscope className="w-8 h-8 text-primary" />
-                </div>
-                <h1 className="font-heading text-3xl md:text-4xl font-bold text-foreground mb-4">
-                  Find PCOS Specialists
-                </h1>
-                <p className="text-muted-foreground">
-                  Connect with qualified gynecologists and endocrinologists near you
-                </p>
-              </div>
-
-              <NearbyDoctors specialty="Gynecologist" />
-
-              <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
-                <Button variant="outline" onClick={() => setCurrentStep("results")}>
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Results
-                </Button>
-                <Button variant="outline" onClick={restartAssessment}>
-                  Take Assessment Again
-                </Button>
-              </div>
-            </motion.div>
-          )}
         </div>
       </main>
       <Footer />
