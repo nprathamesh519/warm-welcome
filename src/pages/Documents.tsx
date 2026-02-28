@@ -1,25 +1,24 @@
 import { useState, useCallback } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   FileText, Upload, Trash2, ExternalLink, Loader2,
-  FileImage, File, AlertCircle, X, CheckCircle2
+  FileImage, File, CheckCircle2, Pencil, Download, X, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
 
 interface DocumentRow {
   id: string;
@@ -32,7 +31,7 @@ interface DocumentRow {
 }
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE = 10 * 1024 * 1024;
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -52,8 +51,10 @@ const Documents = () => {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DocumentRow | null>(null);
+  const [renameTarget, setRenameTarget] = useState<DocumentRow | null>(null);
+  const [newName, setNewName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Fetch documents
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["documents", user?.id],
     queryFn: async () => {
@@ -67,25 +68,18 @@ const Documents = () => {
     enabled: !!user,
   });
 
-  // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (doc: DocumentRow) => {
-      // Delete from storage
       const { error: storageError } = await supabase.storage
         .from("medical-documents")
         .remove([doc.file_path]);
       if (storageError) throw storageError;
-
-      // Delete from DB
-      const { error: dbError } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", doc.id);
+      const { error: dbError } = await supabase.from("documents").delete().eq("id", doc.id);
       if (dbError) throw dbError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
-      toast({ title: "Document deleted", description: "File removed successfully." });
+      toast({ title: "Document deleted successfully" });
       setDeleteTarget(null);
     },
     onError: () => {
@@ -93,7 +87,21 @@ const Documents = () => {
     },
   });
 
-  // Upload handler
+  const renameMutation = useMutation({
+    mutationFn: async ({ id, newName }: { id: string; newName: string }) => {
+      const { error } = await supabase.from("documents").update({ file_name: newName }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      toast({ title: "Document name updated successfully" });
+      setRenameTarget(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to rename document.", variant: "destructive" });
+    },
+  });
+
   const handleUpload = useCallback(async (files: FileList | File[]) => {
     if (!user) return;
     const fileArray = Array.from(files);
@@ -128,10 +136,9 @@ const Documents = () => {
         });
         if (dbError) throw dbError;
 
-        toast({ title: "Uploaded", description: `${file.name} uploaded successfully.` });
+        toast({ title: "Document uploaded successfully" });
         queryClient.invalidateQueries({ queryKey: ["documents"] });
-      } catch (err) {
-        console.error("Upload failed:", err);
+      } catch {
         toast({ title: "Upload failed", description: `Failed to upload ${file.name}.`, variant: "destructive" });
       } finally {
         setUploading(false);
@@ -139,7 +146,24 @@ const Documents = () => {
     }
   }, [user, queryClient]);
 
-  // View handler (signed URL)
+  const handleDownload = async (doc: DocumentRow) => {
+    const { data, error } = await supabase.storage
+      .from("medical-documents")
+      .createSignedUrl(doc.file_path, 60);
+    if (error || !data?.signedUrl) {
+      toast({ title: "File unavailable", description: "Please contact support.", variant: "destructive" });
+      return;
+    }
+    // Trigger download
+    const a = document.createElement("a");
+    a.href = data.signedUrl;
+    a.download = doc.file_name;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const handleView = async (doc: DocumentRow) => {
     const { data, error } = await supabase.storage
       .from("medical-documents")
@@ -151,7 +175,11 @@ const Documents = () => {
     window.open(data.signedUrl, "_blank");
   };
 
-  // Drag & Drop handlers
+  const openRename = (doc: DocumentRow) => {
+    setRenameTarget(doc);
+    setNewName(doc.file_name);
+  };
+
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); };
   const onDragLeave = () => setDragOver(false);
   const onDrop = (e: React.DragEvent) => {
@@ -159,6 +187,10 @@ const Documents = () => {
     setDragOver(false);
     if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files);
   };
+
+  const filteredDocs = documents.filter(d =>
+    !searchQuery || d.file_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <DashboardLayout>
@@ -192,12 +224,8 @@ const Documents = () => {
           ) : (
             <>
               <Upload className="w-10 h-10 text-accent mx-auto mb-3" />
-              <p className="font-medium text-foreground mb-1">
-                Drag & drop files here
-              </p>
-              <p className="text-sm text-muted-foreground mb-4">
-                PDF, JPG, PNG • Max 10MB
-              </p>
+              <p className="font-medium text-foreground mb-1">Drag & drop files here</p>
+              <p className="text-sm text-muted-foreground mb-4">PDF, JPG, PNG • Max 10MB</p>
               <label>
                 <input
                   type="file"
@@ -207,10 +235,7 @@ const Documents = () => {
                   onChange={(e) => e.target.files && handleUpload(e.target.files)}
                 />
                 <Button variant="outline" className="cursor-pointer" asChild>
-                  <span>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Browse Files
-                  </span>
+                  <span><Upload className="w-4 h-4 mr-2" />Upload Medical Report</span>
                 </Button>
               </label>
             </>
@@ -221,14 +246,24 @@ const Documents = () => {
         <div className="flex items-start gap-3 p-4 rounded-xl bg-teal/10 border border-teal/20">
           <CheckCircle2 className="w-5 h-5 text-teal mt-0.5 flex-shrink-0" />
           <div className="text-sm text-muted-foreground">
-            <strong className="text-foreground">🔒 Secure Storage:</strong> Your documents are stored privately with end-to-end encryption. Only you can access them via signed URLs that expire in 60 seconds.
+            <strong className="text-foreground">🔒 Secure Storage:</strong> Your documents are stored privately. Only you can access them.
           </div>
         </div>
+
+        {/* Search */}
+        {documents.length > 0 && (
+          <Input
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="max-w-sm"
+          />
+        )}
 
         {/* Documents List */}
         <div>
           <h2 className="font-heading text-lg font-semibold text-foreground mb-4">
-            Uploaded Documents ({documents.length})
+            Uploaded Documents ({filteredDocs.length})
           </h2>
 
           {isLoading ? (
@@ -238,15 +273,13 @@ const Documents = () => {
           ) : documents.length === 0 ? (
             <div className="text-center py-12 glass-card rounded-2xl">
               <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No documents uploaded yet</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Upload your medical reports to keep them organized
-              </p>
+              <p className="text-muted-foreground">You haven't uploaded any reports yet.</p>
+              <p className="text-sm text-muted-foreground mt-1">Upload your medical reports to keep them organized</p>
             </div>
           ) : (
             <div className="grid gap-3">
               <AnimatePresence>
-                {documents.map((doc) => (
+                {filteredDocs.map((doc) => (
                   <motion.div
                     key={doc.id}
                     initial={{ opacity: 0, y: 10 }}
@@ -267,13 +300,14 @@ const Documents = () => {
                         <span className="uppercase">{doc.file_type.split("/")[1]}</span>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleView(doc)}
-                        className="gap-1.5"
-                      >
+                    <div className="flex gap-1.5">
+                      <Button size="sm" variant="ghost" onClick={() => openRename(doc)} title="Rename">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDownload(doc)} title="Download">
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleView(doc)} className="gap-1.5">
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">View</span>
                       </Button>
@@ -293,6 +327,31 @@ const Documents = () => {
           )}
         </div>
       </div>
+
+      {/* Rename Dialog */}
+      <Dialog open={!!renameTarget} onOpenChange={() => setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Document</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="Document name"
+          />
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              onClick={() => renameTarget && renameMutation.mutate({ id: renameTarget.id, newName })}
+              disabled={!newName.trim() || renameMutation.isPending}
+            >
+              {renameMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

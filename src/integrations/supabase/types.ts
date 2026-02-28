@@ -156,7 +156,7 @@ export type Database = {
         Row: {
           address: string | null
           city: string | null
-          created_at: string
+          created_at: string | null
           description: string | null
           email: string | null
           experience: string | null
@@ -172,12 +172,11 @@ export type Database = {
           phone: string | null
           qualification: string | null
           specialization: string
-          updated_at: string
         }
         Insert: {
           address?: string | null
           city?: string | null
-          created_at?: string
+          created_at?: string | null
           description?: string | null
           email?: string | null
           experience?: string | null
@@ -193,12 +192,11 @@ export type Database = {
           phone?: string | null
           qualification?: string | null
           specialization: string
-          updated_at?: string
         }
         Update: {
           address?: string | null
           city?: string | null
-          created_at?: string
+          created_at?: string | null
           description?: string | null
           email?: string | null
           experience?: string | null
@@ -214,7 +212,6 @@ export type Database = {
           phone?: string | null
           qualification?: string | null
           specialization?: string
-          updated_at?: string
         }
         Relationships: []
       }
