@@ -15,6 +15,7 @@ const navItems = [
   { title: "Users", url: "/admin/users", icon: Users },
   { title: "Resources", url: "/admin/resources", icon: BookOpen },
   { title: "Schemes", url: "/admin/schemes", icon: FileText },
+  { title: "Doctors", url: "/admin/doctors", icon: Users },
 ];
 
 export const AdminSidebar = () => {
