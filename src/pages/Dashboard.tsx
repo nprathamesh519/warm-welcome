@@ -3,28 +3,55 @@ import { Button } from "@/components/ui/button";
 import { 
   Activity, Droplets, ChevronRight, Thermometer, TrendingUp,
   Stethoscope, FileText, BookOpen, Loader2, Calendar,
-  Heart, ArrowRight, Sun, Moon
+  Heart, ArrowRight, Sun, Moon, Sparkles
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useCycleTracking } from "@/hooks/useCycleTracking";
-import { differenceInDays, parseISO, format } from "date-fns";
+import { useHealthAssessments } from "@/hooks/useHealthAssessments";
+import { differenceInDays, parseISO } from "date-fns";
 import { useMemo } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const dashboardSections = [
   { icon: FileText, title: "Medical Reports", description: "Upload & manage documents", path: "/dashboard/documents", color: "text-accent", bgColor: "bg-accent/15" },
   { icon: Stethoscope, title: "Find Doctors", description: "Connect with specialists", path: "/doctors", color: "text-teal", bgColor: "bg-teal/15" },
   { icon: BookOpen, title: "Health Resources", description: "Educational content", path: "/health-resources", color: "text-primary", bgColor: "bg-primary/15" },
   { icon: FileText, title: "Govt. Schemes", description: "Explore health benefits", path: "/schemes", color: "text-accent", bgColor: "bg-accent/15" },
-  
 ];
+
+const getRiskColor = (category: string | null) => {
+  if (!category) return "text-muted-foreground";
+  const lower = category.toLowerCase();
+  if (lower === "high" || lower === "severe") return "text-destructive";
+  if (lower === "moderate" || lower === "medium") return "text-accent";
+  return "text-teal";
+};
+
+const getRiskLabel = (category: string | null) => {
+  if (!category) return null;
+  const lower = category.toLowerCase();
+  if (lower === "high" || lower === "severe") return "High Risk";
+  if (lower === "moderate" || lower === "medium") return "Moderate Risk";
+  if (lower === "low" || lower === "none") return "Low Risk";
+  return category;
+};
+
+const getMenopauseStage = (category: string | null) => {
+  if (!category) return null;
+  const lower = category.toLowerCase();
+  if (lower === "high") return "Post-Menopause";
+  if (lower === "medium" || lower === "moderate") return "Peri-Menopause";
+  return "Pre-Menopause";
+};
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const { cycleLogs, loading, prediction, insights } = useCycleTracking();
+  const { cycleLogs, loading: cycleLoading, insights } = useCycleTracking();
+  const { pcosAssessment, menopauseAssessment, loading: assessmentLoading } = useHealthAssessments();
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'there';
+  const loading = cycleLoading || assessmentLoading;
 
-  // Get time-based greeting
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return { text: "Good morning", icon: Sun };
@@ -32,42 +59,18 @@ const Dashboard = () => {
     return { text: "Good evening", icon: Moon };
   }, []);
 
-  // Calculate current cycle day and create cycle visualization
   const cycleData = useMemo(() => {
     if (cycleLogs.length === 0) {
-      return {
-        currentDay: null,
-        cycleLength: 28,
-        periodDays: [],
-        ovulationDays: [],
-        today: new Date(),
-        phase: "unknown",
-      };
+      return { currentDay: null, cycleLength: 28, phase: "unknown" };
     }
-
     const latestCycle = cycleLogs[0];
     const cycleStart = parseISO(latestCycle.start_date);
     const today = new Date();
     const dayOfCycle = differenceInDays(today, cycleStart) + 1;
     const cycleLength = insights.averageCycleLength || 28;
     const periodLength = latestCycle.period_length || insights.averagePeriodLength || 5;
-    
-    // Calculate period days (1 to periodLength)
-    const periodDays: number[] = [];
-    for (let i = 1; i <= periodLength; i++) {
-      periodDays.push(i);
-    }
-
-    // Calculate ovulation window (typically around day 14 ± 2 for 28-day cycle)
     const ovulationCenter = Math.round(cycleLength / 2);
-    const ovulationDays: number[] = [];
-    for (let i = ovulationCenter - 2; i <= ovulationCenter + 2; i++) {
-      if (i > 0 && i <= cycleLength) {
-        ovulationDays.push(i);
-      }
-    }
 
-    // Determine current phase
     let phase = "follicular";
     if (dayOfCycle <= periodLength) phase = "menstrual";
     else if (dayOfCycle >= ovulationCenter - 2 && dayOfCycle <= ovulationCenter + 2) phase = "ovulation";
@@ -76,69 +79,67 @@ const Dashboard = () => {
     return {
       currentDay: dayOfCycle > 0 && dayOfCycle <= cycleLength ? dayOfCycle : null,
       cycleLength,
-      periodDays,
-      ovulationDays,
-      today,
       phase,
     };
   }, [cycleLogs, insights]);
 
-  // Phase info
-  const phaseInfo = useMemo(() => {
-    const phases: Record<string, { name: string; color: string; tip: string }> = {
-      menstrual: { name: "Menstrual Phase", color: "text-primary", tip: "Rest well and stay hydrated" },
-      follicular: { name: "Follicular Phase", color: "text-teal", tip: "Great time for new activities" },
-      ovulation: { name: "Ovulation Phase", color: "text-accent", tip: "You're at peak energy" },
-      luteal: { name: "Luteal Phase", color: "text-secondary-foreground", tip: "Practice self-care" },
-      unknown: { name: "Start Tracking", color: "text-muted-foreground", tip: "Log your cycle to get insights" },
-    };
-    return phases[cycleData.phase] || phases.unknown;
-  }, [cycleData.phase]);
+  // Build health cards from real data
+  const healthCards = useMemo(() => {
+    const pcosRiskLabel = pcosAssessment ? getRiskLabel(pcosAssessment.risk_category) : null;
+    const pcosScore = pcosAssessment?.risk_score != null ? Math.round(100 - pcosAssessment.risk_score) : null;
+    
+    const menopauseStage = menopauseAssessment ? getMenopauseStage(menopauseAssessment.risk_category) : null;
 
-  // Generate health cards with real data
-  const healthCards = useMemo(() => [
-    {
-      title: "Menstrual Health",
-      status: cycleData.currentDay ? `Day ${cycleData.currentDay} of Cycle` : "Start tracking",
-      statusColor: cycleData.currentDay ? "text-teal" : "text-muted-foreground",
-      icon: Droplets,
-      iconBg: "bg-teal/15",
-      iconColor: "text-teal",
-      path: "/modules/menstrual",
-      metric: cycleLogs.length > 0 ? `${insights.averageCycleLength} days` : "N/A",
-      metricLabel: "Average Cycle",
-    },
-    {
-      title: "PCOS Risk",
-      status: insights.pcosRiskFlag ? "Pattern Detected" : cycleLogs.length >= 3 ? "Low Risk" : "Not Assessed",
-      statusColor: insights.pcosRiskFlag ? "text-accent" : cycleLogs.length >= 3 ? "text-success" : "text-muted-foreground",
-      icon: Activity,
-      iconBg: "bg-accent/15",
-      iconColor: "text-accent",
-      path: "/modules/pcos",
-      metric: cycleLogs.length >= 3 ? `${Math.round(100 - insights.pcosRiskScore)}%` : "N/A",
-      metricLabel: "Health Score",
-    },
-    {
-      title: "Menopause Stage",
-      status: "Not Applicable",
-      statusColor: "text-muted-foreground",
-      icon: Thermometer,
-      iconBg: "bg-primary/15",
-      iconColor: "text-primary",
-      path: "/modules/menopause",
-      metric: "N/A",
-      metricLabel: "Current Stage",
-    },
-  ], [cycleData, cycleLogs, insights]);
+    return [
+      {
+        title: "Menstrual Health",
+        status: cycleData.currentDay ? `Day ${cycleData.currentDay} of Cycle` : "Start tracking",
+        statusColor: cycleData.currentDay ? "text-teal" : "text-muted-foreground",
+        icon: Droplets,
+        iconBg: "bg-teal/15",
+        iconColor: "text-teal",
+        path: "/modules/menstrual",
+        metric: cycleLogs.length > 0 ? `${insights.averageCycleLength} days` : null,
+        metricLabel: "Average Cycle",
+        hasData: cycleLogs.length > 0,
+      },
+      {
+        title: "PCOS Risk",
+        status: pcosRiskLabel || null,
+        statusColor: pcosAssessment ? getRiskColor(pcosAssessment.risk_category) : "text-muted-foreground",
+        icon: Activity,
+        iconBg: "bg-accent/15",
+        iconColor: "text-accent",
+        path: "/modules/pcos",
+        metric: pcosScore != null ? `${pcosScore}%` : null,
+        metricLabel: "Health Score",
+        hasData: !!pcosAssessment,
+      },
+      {
+        title: "Menopause Stage",
+        status: menopauseStage || null,
+        statusColor: menopauseAssessment ? getRiskColor(menopauseAssessment.risk_category) : "text-muted-foreground",
+        icon: Thermometer,
+        iconBg: "bg-primary/15",
+        iconColor: "text-primary",
+        path: "/modules/menopause",
+        metric: menopauseAssessment?.risk_score != null ? `${Math.round(menopauseAssessment.risk_score)}%` : null,
+        metricLabel: "Risk Score",
+        hasData: !!menopauseAssessment,
+      },
+    ];
+  }, [cycleData, cycleLogs, insights, pcosAssessment, menopauseAssessment]);
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-muted-foreground">Loading your dashboard...</p>
+        <div className="space-y-6 md:space-y-8">
+          <Skeleton className="h-48 rounded-2xl" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-44 rounded-xl" />)}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
           </div>
         </div>
       </DashboardLayout>
@@ -154,7 +155,6 @@ const Dashboard = () => {
           <div className="absolute bottom-0 left-0 w-24 h-24 md:w-32 md:h-32 bg-teal/20 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2" />
           
           <div className="relative z-10">
-            {/* NaariCare Logo */}
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
                 <Heart className="w-6 h-6 text-primary-foreground fill-current" />
@@ -175,7 +175,6 @@ const Dashboard = () => {
               Here's your personalized health summary. Track your cycle, monitor your health, and access resources all in one place.
             </p>
             
-            {/* Quick Stats */}
             <div className="flex flex-wrap gap-4 mt-6">
               <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-background/60 backdrop-blur-sm border border-border/50">
                 <Calendar className="w-4 h-4 text-primary" />
@@ -193,7 +192,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Health Modules - Quick Access */}
+        {/* Health Modules */}
         <div className="animate-fade-up" style={{ animationDelay: '100ms' }}>
           <h2 className="font-heading text-lg sm:text-xl font-semibold text-foreground mb-4">Health Modules</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -211,11 +210,24 @@ const Dashboard = () => {
                   <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all duration-300" />
                 </div>
                 <h3 className="font-heading text-base font-semibold text-foreground mb-1">{card.title}</h3>
-                <p className={`text-sm font-medium ${card.statusColor} mb-3`}>{card.status}</p>
-                <div className="pt-3 border-t border-border">
-                  <div className="text-xl font-bold gradient-text">{card.metric}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{card.metricLabel}</div>
-                </div>
+                
+                {card.hasData ? (
+                  <>
+                    <p className={`text-sm font-medium ${card.statusColor} mb-3`}>{card.status}</p>
+                    <div className="pt-3 border-t border-border">
+                      <div className="text-xl font-bold gradient-text">{card.metric}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{card.metricLabel}</div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-2">
+                    <p className="text-sm text-muted-foreground mb-3">No assessment yet</p>
+                    <div className="pt-3 border-t border-border flex items-center gap-2 text-primary text-sm font-medium">
+                      <Sparkles className="w-4 h-4" />
+                      Start Assessment
+                    </div>
+                  </div>
+                )}
               </Link>
             ))}
           </div>
