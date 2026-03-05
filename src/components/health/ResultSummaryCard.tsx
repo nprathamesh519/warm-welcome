@@ -1,81 +1,48 @@
-import { memo, ReactNode } from "react";
+import { ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Info } from "lucide-react";
 
 interface ResultSummaryCardProps {
   title: string;
-  status: "positive" | "negative" | "neutral";
+  status: 'positive' | 'neutral' | 'negative';
   icon: ReactNode;
   description: string;
-  details?: string[];
+  details: string[];
 }
 
-export const ResultSummaryCard = memo(({ 
-  title, 
-  status, 
-  icon, 
-  description, 
-  details 
-}: ResultSummaryCardProps) => {
-  const statusStyles = {
-    positive: {
-      bg: "bg-teal/10",
-      border: "border-teal/30",
-      iconBg: "bg-teal/20",
-      text: "text-teal",
-    },
-    negative: {
-      bg: "bg-destructive/10",
-      border: "border-destructive/30",
-      iconBg: "bg-destructive/20",
-      text: "text-destructive",
-    },
-    neutral: {
-      bg: "bg-accent/10",
-      border: "border-accent/30",
-      iconBg: "bg-accent/20",
-      text: "text-accent",
-    },
+export const ResultSummaryCard = ({ title, status, icon, description, details }: ResultSummaryCardProps) => {
+  const statusColors = {
+    positive: 'border-primary/30 bg-primary/5',
+    neutral: 'border-accent/30 bg-accent/5',
+    negative: 'border-destructive/30 bg-destructive/5',
   };
 
-  const styles = statusStyles[status];
+  const iconColors = {
+    positive: 'text-primary',
+    neutral: 'text-accent',
+    negative: 'text-destructive',
+  };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl p-4 sm:p-6 border-2 ${styles.bg} ${styles.border}`}
+      className={`rounded-2xl border-2 p-4 sm:p-6 ${statusColors[status]}`}
     >
-      <div className="flex flex-col sm:flex-row items-start gap-4">
-        <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl ${styles.iconBg} flex items-center justify-center flex-shrink-0`}>
-          <div className={styles.text}>{icon}</div>
-        </div>
-        <div className="flex-1">
-          <h3 className={`font-heading text-lg sm:text-xl font-bold ${styles.text} mb-1`}>
-            {title}
-          </h3>
-          <p className="text-foreground/80 text-sm sm:text-base mb-3">{description}</p>
-          
-          {details && details.length > 0 && (
-            <div className="space-y-2">
-              {details.map((detail, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="flex items-start gap-2"
-                >
-                  <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-muted-foreground">{detail}</span>
-                </motion.div>
-              ))}
-            </div>
-          )}
+      <div className="flex items-start gap-4">
+        <div className={`shrink-0 ${iconColors[status]}`}>{icon}</div>
+        <div className="space-y-2">
+          <h2 className="font-heading text-lg sm:text-xl font-bold text-foreground">{title}</h2>
+          <p className="text-sm sm:text-base text-muted-foreground">{description}</p>
+          <ul className="space-y-1">
+            {details.map((detail, i) => (
+              <li key={i} className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                {detail}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </motion.div>
   );
-});
-
-ResultSummaryCard.displayName = "ResultSummaryCard";
+};
