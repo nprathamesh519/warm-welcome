@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -19,7 +19,11 @@ import {
   Bone,
   Clock,
   Brain,
-  Loader2
+  Loader2,
+  ClipboardList,
+  FlaskConical,
+  AlertTriangle,
+  User
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +43,7 @@ const MenopauseModule = () => {
   const [predictionMeta, setPredictionMeta] = useState<MLPredictionMeta | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const assessmentRef = useRef<HTMLDivElement>(null);
 
   const handleAssessmentSubmit = async (data: MenopauseInputData) => {
     setAnalyzing(true);
@@ -105,6 +110,11 @@ const MenopauseModule = () => {
     setMenopauseResult(null);
   };
 
+  const scrollToAssessment = () => {
+    setCurrentStep("assessment");
+    setTimeout(() => assessmentRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
   const currentStepIndex = ["education", "assessment", "results"].indexOf(currentStep);
 
   const menopauseStages = [
@@ -139,7 +149,7 @@ const MenopauseModule = () => {
       <Header />
       <main className="pt-24 pb-16">
         <div className="container mx-auto px-4 max-w-4xl">
-          {/* Improved Progress Indicator */}
+          {/* Progress Indicator */}
           <div className="mb-10">
             <div className="flex items-center justify-between mb-2">
               {stepLabels.map((label, i) => (
@@ -203,36 +213,25 @@ const MenopauseModule = () => {
 
               {/* Quick Stats */}
               <div className="grid grid-cols-3 gap-4">
-                <motion.div
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                  className="glass-card rounded-xl p-4 text-center"
-                >
-                  <div className="text-3xl font-bold text-teal">45-55</div>
-                  <div className="text-xs text-muted-foreground">Typical Age Range</div>
-                </motion.div>
-                <motion.div
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.2 }}
-                  className="glass-card rounded-xl p-4 text-center"
-                >
-                  <div className="text-3xl font-bold text-primary">51</div>
-                  <div className="text-xs text-muted-foreground">Average Age</div>
-                </motion.div>
-                <motion.div
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="glass-card rounded-xl p-4 text-center"
-                >
-                  <div className="text-3xl font-bold text-accent">4-8</div>
-                  <div className="text-xs text-muted-foreground">Years Transition</div>
-                </motion.div>
+                {[
+                  { value: "45-55", label: "Typical Age Range", delay: 0.1 },
+                  { value: "51", label: "Average Age", delay: 0.2 },
+                  { value: "4-8", label: "Years Transition", delay: 0.3 },
+                ].map(({ value, label, delay }) => (
+                  <motion.div
+                    key={label}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay }}
+                    className="glass-card rounded-xl p-4 text-center"
+                  >
+                    <div className="text-3xl font-bold text-teal">{value}</div>
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                  </motion.div>
+                ))}
               </div>
 
-              {/* Visual Timeline of Stages */}
+              {/* Stages Timeline */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -281,7 +280,6 @@ const MenopauseModule = () => {
                   color="accent"
                   delay={0.1}
                 />
-                
                 <EducationCard
                   icon={Moon}
                   title="Sleep & Mood Changes"
@@ -295,7 +293,6 @@ const MenopauseModule = () => {
                   color="primary"
                   delay={0.2}
                 />
-                
                 <EducationCard
                   icon={Bone}
                   title="Physical Changes"
@@ -311,12 +308,93 @@ const MenopauseModule = () => {
                 />
               </div>
 
+              {/* Before You Start Section */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="space-y-4"
+              >
+                <h2 className="font-heading text-xl font-semibold text-foreground flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5 text-teal" />
+                  Before You Start the Assessment
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                  Make sure you have the following information ready for a more accurate evaluation.
+                </p>
+
+                {/* Personal Health Info */}
+                <div className="glass-card rounded-2xl p-5 border border-teal/20">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-teal/15 flex items-center justify-center">
+                      <User className="w-5 h-5 text-teal" />
+                    </div>
+                    <h3 className="font-semibold text-foreground">Personal Health Details</h3>
+                  </div>
+                  <ul className="space-y-1.5 text-sm text-muted-foreground ml-13">
+                    {["Age", "Menstrual cycle status", "Last menstrual period", "Pregnancy history", "Current symptoms (hot flashes, mood changes, sleep issues)"].map(item => (
+                      <li key={item} className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal flex-shrink-0" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Hormone Report */}
+                <div className="glass-card rounded-2xl p-5 border border-primary/20">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
+                      <FlaskConical className="w-5 h-5 text-primary" />
+                    </div>
+                    <h3 className="font-semibold text-foreground">Hormone Test Report <span className="text-xs font-normal text-muted-foreground">(Recommended)</span></h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Hormone blood test values improve menopause stage prediction accuracy.
+                  </p>
+                  <ul className="space-y-1.5 text-sm text-muted-foreground">
+                    {["FSH (Follicle Stimulating Hormone)", "Estradiol (E2)", "LH (Luteinizing Hormone)", "TSH (Thyroid Stimulating Hormone)"].map(item => (
+                      <li key={item} className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground mt-3 italic">
+                    If hormone reports are not available, the assessment can still continue using symptom-based evaluation.
+                  </p>
+                </div>
+
+                {/* Accuracy Notice */}
+                <div className="rounded-2xl p-5 border border-accent/30 bg-accent/5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center">
+                      <AlertTriangle className="w-5 h-5 text-accent" />
+                    </div>
+                    <h3 className="font-semibold text-foreground">Important Accuracy Notice</h3>
+                  </div>
+                  <ul className="space-y-1.5 text-sm text-muted-foreground">
+                    {[
+                      "Use official medical reports only",
+                      "Enter values exactly as written in reports",
+                      "Ensure measurements use correct units",
+                      "If reports are unavailable, consult a gynecologist"
+                    ].map(item => (
+                      <li key={item} className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </motion.div>
+
               <HealthDisclaimer />
 
               <div className="text-center">
-                <Button size="lg" onClick={() => setCurrentStep("assessment")} className="group text-lg px-8 bg-teal hover:bg-teal/90">
+                <Button size="lg" onClick={scrollToAssessment} className="group text-lg px-8 bg-teal hover:bg-teal/90">
                   <Heart className="w-5 h-5 mr-2" />
-                  Start Assessment
+                  Start Menopause Assessment
                   <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </div>
@@ -326,6 +404,7 @@ const MenopauseModule = () => {
           {/* Assessment Step */}
           {currentStep === "assessment" && !analyzing && (
             <motion.div
+              ref={assessmentRef}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
             >

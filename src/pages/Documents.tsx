@@ -7,8 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  FileText, Upload, Trash2, ExternalLink, Loader2,
-  FileImage, File, CheckCircle2, Pencil, Download, X, Check
+  FileText, Upload, Trash2, Loader2,
+  FileImage, File, CheckCircle2, Pencil, Download, Search, AlertTriangle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -31,7 +31,8 @@ interface DocumentRow {
 }
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
-const MAX_SIZE = 10 * 1024 * 1024;
+const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_DOCUMENTS = 20;
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -83,7 +84,7 @@ const Documents = () => {
       setDeleteTarget(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to delete document.", variant: "destructive" });
+      toast({ title: "Unable to delete document", description: "Please try again.", variant: "destructive" });
     },
   });
 
@@ -98,22 +99,32 @@ const Documents = () => {
       setRenameTarget(null);
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to rename document.", variant: "destructive" });
+      toast({ title: "Failed to rename document", description: "Please try again.", variant: "destructive" });
     },
   });
 
   const handleUpload = useCallback(async (files: FileList | File[]) => {
     if (!user) return;
+
+    if (documents.length >= MAX_DOCUMENTS) {
+      toast({ title: "Upload limit reached", description: `Maximum ${MAX_DOCUMENTS} documents allowed. Delete old ones first.`, variant: "destructive" });
+      return;
+    }
+
     const fileArray = Array.from(files);
 
     for (const file of fileArray) {
       if (!ALLOWED_TYPES.includes(file.type)) {
-        toast({ title: "Invalid file type", description: `${file.name}: Only PDF, JPG, PNG allowed.`, variant: "destructive" });
+        toast({ title: "Unsupported format", description: "Only PDF, JPG, PNG allowed.", variant: "destructive" });
         continue;
       }
       if (file.size > MAX_SIZE) {
-        toast({ title: "File too large", description: `${file.name}: Max 10MB allowed.`, variant: "destructive" });
+        toast({ title: "File too large", description: "File size must be under 5MB.", variant: "destructive" });
         continue;
+      }
+      if (documents.length + 1 > MAX_DOCUMENTS) {
+        toast({ title: "Upload limit reached", description: `Maximum ${MAX_DOCUMENTS} documents.`, variant: "destructive" });
+        break;
       }
 
       setUploading(true);
@@ -139,12 +150,12 @@ const Documents = () => {
         toast({ title: "Document uploaded successfully" });
         queryClient.invalidateQueries({ queryKey: ["documents"] });
       } catch {
-        toast({ title: "Upload failed", description: `Failed to upload ${file.name}.`, variant: "destructive" });
+        toast({ title: "Upload failed", description: "Please try again.", variant: "destructive" });
       } finally {
         setUploading(false);
       }
     }
-  }, [user, queryClient]);
+  }, [user, queryClient, documents.length]);
 
   const handleDownload = async (doc: DocumentRow) => {
     const { data, error } = await supabase.storage
@@ -154,7 +165,6 @@ const Documents = () => {
       toast({ title: "File unavailable", description: "Please contact support.", variant: "destructive" });
       return;
     }
-    // Trigger download
     const a = document.createElement("a");
     a.href = data.signedUrl;
     a.download = doc.file_name;
@@ -164,20 +174,9 @@ const Documents = () => {
     document.body.removeChild(a);
   };
 
-  const handleView = async (doc: DocumentRow) => {
-    const { data, error } = await supabase.storage
-      .from("medical-documents")
-      .createSignedUrl(doc.file_path, 60);
-    if (error || !data?.signedUrl) {
-      toast({ title: "Error", description: "Could not generate view link.", variant: "destructive" });
-      return;
-    }
-    window.open(data.signedUrl, "_blank");
-  };
-
   const openRename = (doc: DocumentRow) => {
     setRenameTarget(doc);
-    setNewName(doc.file_name);
+    setNewName(doc.file_name.replace(/\.[^/.]+$/, ""));
   };
 
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); };
@@ -192,17 +191,27 @@ const Documents = () => {
     !searchQuery || d.file_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const getExtension = (name: string) => {
+    const parts = name.split(".");
+    return parts.length > 1 ? `.${parts.pop()}` : "";
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6 animate-fade-up max-w-4xl mx-auto">
         {/* Header */}
-        <div>
-          <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">
-            📄 My Medical Reports
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Securely upload and manage your medical documents
-          </p>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="font-heading text-2xl md:text-3xl font-bold text-foreground">
+              📄 My Medical Reports
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Securely upload and manage your health documents
+            </p>
+          </div>
+          <div className="text-sm text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
+            {documents.length}/{MAX_DOCUMENTS} documents
+          </div>
         </div>
 
         {/* Upload Zone */}
@@ -221,11 +230,17 @@ const Documents = () => {
               <Loader2 className="w-10 h-10 text-accent animate-spin" />
               <p className="text-sm text-muted-foreground">Uploading...</p>
             </div>
+          ) : documents.length >= MAX_DOCUMENTS ? (
+            <div className="flex flex-col items-center gap-3">
+              <AlertTriangle className="w-10 h-10 text-accent" />
+              <p className="font-medium text-foreground">Upload limit reached</p>
+              <p className="text-sm text-muted-foreground">Delete old documents to upload new ones</p>
+            </div>
           ) : (
             <>
               <Upload className="w-10 h-10 text-accent mx-auto mb-3" />
               <p className="font-medium text-foreground mb-1">Drag & drop files here</p>
-              <p className="text-sm text-muted-foreground mb-4">PDF, JPG, PNG • Max 10MB</p>
+              <p className="text-sm text-muted-foreground mb-4">PDF, JPG, PNG • Max 5MB</p>
               <label>
                 <input
                   type="file"
@@ -246,18 +261,21 @@ const Documents = () => {
         <div className="flex items-start gap-3 p-4 rounded-xl bg-teal/10 border border-teal/20">
           <CheckCircle2 className="w-5 h-5 text-teal mt-0.5 flex-shrink-0" />
           <div className="text-sm text-muted-foreground">
-            <strong className="text-foreground">🔒 Secure Storage:</strong> Your documents are stored privately. Only you can access them.
+            <strong className="text-foreground">🔒 Secure Storage:</strong> Your documents are encrypted and only accessible by you.
           </div>
         </div>
 
         {/* Search */}
         {documents.length > 0 && (
-          <Input
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="max-w-sm"
-          />
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name (Blood, Scan, Prescription...)"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         )}
 
         {/* Documents List */}
@@ -273,8 +291,13 @@ const Documents = () => {
           ) : documents.length === 0 ? (
             <div className="text-center py-12 glass-card rounded-2xl">
               <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">You haven't uploaded any reports yet.</p>
+              <p className="font-medium text-foreground">No reports uploaded yet</p>
               <p className="text-sm text-muted-foreground mt-1">Upload your medical reports to keep them organized</p>
+            </div>
+          ) : filteredDocs.length === 0 ? (
+            <div className="text-center py-8 glass-card rounded-2xl">
+              <Search className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No documents match "{searchQuery}"</p>
             </div>
           ) : (
             <div className="grid gap-3">
@@ -307,15 +330,12 @@ const Documents = () => {
                       <Button size="sm" variant="ghost" onClick={() => handleDownload(doc)} title="Download">
                         <Download className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleView(doc)} className="gap-1.5">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">View</span>
-                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => setDeleteTarget(doc)}
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -337,14 +357,17 @@ const Documents = () => {
           <Input
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            placeholder="Document name"
+            placeholder="e.g. Blood Test Report - Jan 2025"
           />
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
             <Button
-              onClick={() => renameTarget && renameMutation.mutate({ id: renameTarget.id, newName })}
+              onClick={() => renameTarget && renameMutation.mutate({
+                id: renameTarget.id,
+                newName: newName.trim() + getExtension(renameTarget.file_name)
+              })}
               disabled={!newName.trim() || renameMutation.isPending}
             >
               {renameMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
@@ -359,7 +382,7 @@ const Documents = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Document?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>{deleteTarget?.file_name}</strong>. This action cannot be undone.
+              Are you sure you want to delete <strong>{deleteTarget?.file_name}</strong>? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
