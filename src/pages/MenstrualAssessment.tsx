@@ -123,13 +123,13 @@ const MenstrualAssessment = () => {
       // Save to Supabase
       if (user) {
         const assessmentType = _meta.usedAPI ? "menstrual_ml_api" : "menstrual_ml_local";
-        await supabase.from("health_assessments").insert([{
+        await (supabase.from("health_assessments") as any).insert([{
           user_id: user.id,
           assessment_type: assessmentType,
           risk_score: riskScore,
           risk_category: riskCategory,
-          responses: formData as unknown as Record<string, unknown>,
-          recommendations: assessmentResult.recommendations as unknown as Record<string, unknown>,
+          responses: formData,
+          recommendations: assessmentResult.recommendations,
         }]);
       }
 
