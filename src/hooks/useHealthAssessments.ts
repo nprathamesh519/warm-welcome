@@ -50,9 +50,27 @@ export function useHealthAssessments() {
     enabled: !!user,
   });
 
+  const { data: menstrualAssessment, isLoading: menstrualLoading } = useQuery({
+    queryKey: ["health-assessment", "menstrual", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("health_assessments")
+        .select("*")
+        .eq("user_id", user!.id)
+        .or("assessment_type.eq.menstrual_ml_api,assessment_type.eq.menstrual_ml_local")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as HealthAssessment | null;
+    },
+    enabled: !!user,
+  });
+
   return {
     pcosAssessment,
     menopauseAssessment,
-    loading: pcosLoading || menopauseLoading,
+    menstrualAssessment,
+    loading: pcosLoading || menopauseLoading || menstrualLoading,
   };
 }
