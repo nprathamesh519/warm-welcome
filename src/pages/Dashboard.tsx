@@ -48,7 +48,7 @@ const getMenopauseStage = (category: string | null) => {
 const Dashboard = () => {
   const { user } = useAuth();
   const { cycleLogs, loading: cycleLoading, insights } = useCycleTracking();
-  const { pcosAssessment, menopauseAssessment, loading: assessmentLoading } = useHealthAssessments();
+  const { pcosAssessment, menopauseAssessment, menstrualAssessment, loading: assessmentLoading } = useHealthAssessments();
   const userName = user?.user_metadata?.full_name?.split(' ')[0] || 'there';
   const loading = cycleLoading || assessmentLoading;
 
