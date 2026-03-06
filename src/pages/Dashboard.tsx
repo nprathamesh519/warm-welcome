@@ -90,18 +90,29 @@ const Dashboard = () => {
     
     const menopauseStage = menopauseAssessment ? getMenopauseStage(menopauseAssessment.risk_category) : null;
 
+    // Menstrual assessment data
+    const menstrualStatus = menstrualAssessment
+      ? (menstrualAssessment.risk_category === "low" ? "Regular" : "Irregular")
+      : (cycleData.currentDay ? `Day ${cycleData.currentDay} of Cycle` : null);
+    const menstrualMetric = menstrualAssessment
+      ? `${menstrualAssessment.risk_score != null ? Math.round(menstrualAssessment.risk_score) : 0}%`
+      : (cycleLogs.length > 0 ? `${insights.averageCycleLength} days` : null);
+    const menstrualMetricLabel = menstrualAssessment ? "Risk Score" : "Average Cycle";
+
     return [
       {
         title: "Menstrual Health",
-        status: cycleData.currentDay ? `Day ${cycleData.currentDay} of Cycle` : "Start tracking",
-        statusColor: cycleData.currentDay ? "text-teal" : "text-muted-foreground",
+        status: menstrualStatus || "Start tracking",
+        statusColor: menstrualAssessment
+          ? getRiskColor(menstrualAssessment.risk_category)
+          : (cycleData.currentDay ? "text-teal" : "text-muted-foreground"),
         icon: Droplets,
         iconBg: "bg-teal/15",
         iconColor: "text-teal",
         path: "/modules/menstrual",
-        metric: cycleLogs.length > 0 ? `${insights.averageCycleLength} days` : null,
-        metricLabel: "Average Cycle",
-        hasData: cycleLogs.length > 0,
+        metric: menstrualMetric,
+        metricLabel: menstrualMetricLabel,
+        hasData: !!menstrualAssessment || cycleLogs.length > 0,
       },
       {
         title: "PCOS Risk",
@@ -128,7 +139,7 @@ const Dashboard = () => {
         hasData: !!menopauseAssessment,
       },
     ];
-  }, [cycleData, cycleLogs, insights, pcosAssessment, menopauseAssessment]);
+  }, [cycleData, cycleLogs, insights, pcosAssessment, menopauseAssessment, menstrualAssessment]);
 
   if (loading) {
     return (
