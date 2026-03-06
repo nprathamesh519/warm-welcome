@@ -349,53 +349,57 @@ const Documents = () => {
       </div>
 
       {/* Rename Dialog */}
-      <Dialog open={!!renameTarget} onOpenChange={() => setRenameTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename Document</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            placeholder="e.g. Blood Test Report - Jan 2025"
-          />
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              onClick={() => renameTarget && renameMutation.mutate({
-                id: renameTarget.id,
-                newName: newName.trim() + getExtension(renameTarget.file_name)
-              })}
-              disabled={!newName.trim() || renameMutation.isPending}
-            >
-              {renameMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {renameTarget && (
+        <Dialog open={true} onOpenChange={() => setRenameTarget(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rename Document</DialogTitle>
+            </DialogHeader>
+            <Input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="e.g. Blood Test Report - Jan 2025"
+            />
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button
+                onClick={() => renameMutation.mutate({
+                  id: renameTarget.id,
+                  newName: newName.trim() + getExtension(renameTarget.file_name)
+                })}
+                disabled={!newName.trim() || renameMutation.isPending}
+              >
+                {renameMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Document?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.file_name}</strong>? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {deleteTarget && (
+        <AlertDialog open={true} onOpenChange={() => setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Document?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete <strong>{deleteTarget.file_name}</strong>? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteMutation.mutate(deleteTarget)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </DashboardLayout>
   );
 };
