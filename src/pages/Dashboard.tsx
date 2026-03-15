@@ -1,9 +1,8 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Button } from "@/components/ui/button";
 import { 
-  Activity, Droplets, ChevronRight, Thermometer, TrendingUp,
-  Stethoscope, FileText, BookOpen, Loader2, Calendar,
-  Heart, ArrowRight, Sun, Moon, Sparkles
+  Activity, Droplets, ChevronRight, Thermometer,
+  Stethoscope, FileText, BookOpen, Calendar,
+  Heart, Sun, Moon, Sparkles
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";

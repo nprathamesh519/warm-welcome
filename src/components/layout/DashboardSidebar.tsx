@@ -11,7 +11,6 @@ import {
   Apple,
   Stethoscope,
   FileText,
-  Sparkles,
   MessageCircle,
   User,
   LogOut,
