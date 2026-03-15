@@ -1,431 +1,691 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { HealthDisclaimer } from "@/components/health/HealthDisclaimer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { predictCycleFromAPI, CycleData } from "@/lib/ml-predictions";
+import { cn } from "@/lib/utils";
 import {
-  Droplets, Loader2, CheckCircle2, ArrowLeft, Calendar,
-  Heart, Moon, Activity, Thermometer, Sparkles, AlertCircle
+  Droplets, Loader2, CheckCircle2, AlertTriangle,
+  CalendarIcon, Heart, Moon, Activity, Thermometer,
+  Sparkles, Apple, Dumbbell, Leaf, RotateCcw, ArrowRight,
+  User, Scale, BedDouble, Brain, Pill, Clock
 } from "lucide-react";
-import { motion } from "framer-motion";
-import { format, addDays } from "date-fns";
+import { motion, AnimatePresence } from "framer-motion";
+import { format, addDays, differenceInDays } from "date-fns";
 
-type Step = "education" | "assessment" | "results";
-
-interface MenstrualFormData {
+// ── Types ──────────────────────────────────────────────
+interface FormData {
   age: number;
   bmi: number;
   sleep: number;
-  stress: "low" | "medium" | "high";
-  pcos: boolean;
-  thyroid: boolean;
+  stress: string;
+  pcos: string;
+  thyroid: string;
   period_duration: number;
-  flow: "light" | "medium" | "heavy";
-  cramps: "low" | "medium" | "high";
-  pimples: boolean;
+  flow: string;
+  cramps: string;
+  pimples: string;
   prev1: number;
   prev2: number;
   prev3: number;
-  last_period: string;
+  last_period: Date | undefined;
 }
 
-interface AssessmentResult {
-  cycleStatus: string;
-  nextPeriodDate: string;
-  averageCycleLength: number;
-  isIrregular: boolean;
-  confidenceLevel: string;
-  recommendations: {
-    diet: string[];
-    exercise: string[];
-    lifestyle: string[];
-  };
-  riskScore: number;
-  riskCategory: string;
+interface PredictionResult {
+  cycle_status: string;
+  next_period_date: string;
+  severity?: string;
+  confidence?: string;
 }
 
+// ── Component ──────────────────────────────────────────
 const MenstrualAssessment = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [currentStep, setCurrentStep] = useState<Step>("education");
-  const [result, setResult] = useState<AssessmentResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [formData, setFormData] = useState<MenstrualFormData>({
-    age: 25, bmi: 22, sleep: 7, stress: "medium",
-    pcos: false, thyroid: false, period_duration: 5,
-    flow: "medium", cramps: "medium", pimples: false,
-    prev1: 28, prev2: 28, prev3: 28, last_period: format(new Date(), "yyyy-MM-dd"),
+
+  const [formData, setFormData] = useState<FormData>({
+    age: 25, bmi: 22.0, sleep: 7, stress: "",
+    pcos: "", thyroid: "", period_duration: 5,
+    flow: "", cramps: "", pimples: "",
+    prev1: 28, prev2: 28, prev3: 28, last_period: undefined,
   });
 
-  const updateField = <K extends keyof MenstrualFormData>(key: K, value: MenstrualFormData[K]) => {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<PredictionResult | null>(null);
+  const [showResult, setShowResult] = useState(false);
+
+  const updateField = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  // ── Validation ────────────────────────────────────────
+  const isFormValid = (): boolean => {
+    return (
+      formData.age >= 10 && formData.age <= 60 &&
+      formData.bmi >= 10 && formData.bmi <= 60 &&
+      formData.sleep >= 1 && formData.sleep <= 16 &&
+      !!formData.stress &&
+      !!formData.pcos &&
+      !!formData.thyroid &&
+      formData.period_duration >= 1 && formData.period_duration <= 15 &&
+      !!formData.flow &&
+      !!formData.cramps &&
+      !!formData.pimples &&
+      formData.prev1 >= 15 && formData.prev1 <= 60 &&
+      formData.prev2 >= 15 && formData.prev2 <= 60 &&
+      formData.prev3 >= 15 && formData.prev3 <= 60 &&
+      !!formData.last_period
+    );
   };
 
+  // ── Submit handler ────────────────────────────────────
   const handleSubmit = async () => {
-    setAnalyzing(true);
-    setCurrentStep("results");
+    if (!isFormValid()) {
+      toast({ title: "Incomplete Form", description: "Please fill all fields before submitting.", variant: "destructive" });
+      return;
+    }
+
+    setLoading(true);
+    setShowResult(false);
 
     try {
-      const stressMap = { low: 1, medium: 3, high: 5 };
-      const crampsMap = { low: "none", medium: "mild", high: "severe" } as const;
+      // Build FormData for FastAPI (multipart/form-data)
+      const body = new FormData();
+      body.append("age", String(formData.age));
+      body.append("bmi", String(formData.bmi));
+      body.append("sleep", String(formData.sleep));
+      body.append("stress", formData.stress);
+      body.append("pcos", formData.pcos);
+      body.append("thyroid", formData.thyroid);
+      body.append("period_duration", String(formData.period_duration));
+      body.append("flow", formData.flow);
+      body.append("cramps", formData.cramps);
+      body.append("pimples", formData.pimples);
+      body.append("prev1", String(formData.prev1));
+      body.append("prev2", String(formData.prev2));
+      body.append("prev3", String(formData.prev3));
+      body.append("last_period", format(formData.last_period!, "yyyy-MM-dd"));
 
-      const cycleData: CycleData = {
-        cycleHistory: [formData.prev1, formData.prev2, formData.prev3],
-        lastPeriodStart: new Date(formData.last_period),
-        symptoms: {
-          cramps: crampsMap[formData.cramps],
-          acne: formData.pimples,
-          bloating: false,
-          fatigue: false,
-        },
-        stressLevel: stressMap[formData.stress],
-        sleepHours: formData.sleep,
-      };
+      let prediction: PredictionResult;
+      let usedAPI = false;
 
-      const { _meta, ...prediction } = await predictCycleFromAPI(cycleData);
+      try {
+        const res = await fetch("http://localhost:8000/predict", {
+          method: "POST",
+          body,
+        });
 
-      const avgCycle = prediction.averageCycleLength;
-      const isIrregular = prediction.isIrregular;
-      const riskScore = isIrregular ? Math.min(prediction.cycleVariability * 10 + 30, 85) : Math.max(10, prediction.cycleVariability * 5);
-      const riskCategory = riskScore > 50 ? "moderate" : "low";
+        if (res.ok) {
+          prediction = await res.json();
+          usedAPI = true;
+        } else {
+          throw new Error("API error");
+        }
+      } catch {
+        // Local fallback prediction
+        prediction = localPrediction();
+      }
 
-      const assessmentResult: AssessmentResult = {
-        cycleStatus: isIrregular ? "Irregular" : "Regular",
-        nextPeriodDate: format(prediction.predictedStartDate, "yyyy-MM-dd"),
-        averageCycleLength: avgCycle,
-        isIrregular,
-        confidenceLevel: prediction.confidenceLevel,
-        riskScore,
-        riskCategory,
-        recommendations: {
-          diet: isIrregular
-            ? ["Iron-rich foods: spinach, dates, jaggery", "Anti-inflammatory: turmeric, ginger tea", "Omega-3: flaxseeds, walnuts, fish", "Avoid processed and fried food"]
-            : ["Maintain balanced nutrition", "Include iron-rich foods during period", "Stay hydrated with 2-3L water daily", "Include fresh fruits and vegetables"],
-          exercise: isIrregular
-            ? ["Gentle yoga: Baddha Konasana, Supta Virasana", "Light walking 20-30 min daily", "Avoid intense workouts during period", "Pranayama for stress reduction"]
-            : ["Regular 30-min moderate exercise", "Mix of cardio and flexibility", "Light stretching during period", "Stay active throughout the month"],
-          lifestyle: isIrregular
-            ? ["Track symptoms consistently", "Maintain regular sleep schedule", "Stress management is crucial", "Consult a gynecologist if persistent"]
-            : ["Continue tracking your cycle", "Maintain healthy sleep habits", "Regular health check-ups", "Practice stress management"],
-        },
-      };
-
-      setResult(assessmentResult);
+      setResult(prediction);
+      setShowResult(true);
 
       // Save to Supabase
       if (user) {
-        const assessmentType = _meta.usedAPI ? "menstrual_ml_api" : "menstrual_ml_local";
-        await (supabase.from("health_assessments") as any).insert([{
+        const avgCycle = Math.round((formData.prev1 + formData.prev2 + formData.prev3) / 3);
+        const isIrregular = prediction.cycle_status?.toLowerCase() === "irregular";
+        const riskScore = isIrregular ? 55 : 15;
+        const riskCategory = isIrregular ? "moderate" : "low";
+
+        await supabase.from("health_assessments").insert([{
           user_id: user.id,
-          assessment_type: assessmentType,
+          assessment_type: usedAPI ? "menstrual_ml_api" : "menstrual_ml_local",
           risk_score: riskScore,
           risk_category: riskCategory,
-          responses: formData,
-          recommendations: assessmentResult.recommendations,
+          responses: {
+            ...formData,
+            last_period: format(formData.last_period!, "yyyy-MM-dd"),
+          },
+          recommendations: {
+            cycle_status: prediction.cycle_status,
+            next_period_date: prediction.next_period_date,
+            average_cycle_length: avgCycle,
+          },
         }]);
       }
 
       toast({ title: "Assessment Complete!", description: "Your menstrual cycle analysis is ready." });
     } catch (err) {
-      console.error("Menstrual assessment error:", err);
-      toast({ title: "Error", description: "Unable to analyze cycle. Please try again.", variant: "destructive" });
-      setCurrentStep("assessment");
+      console.error("Assessment error:", err);
+      toast({ title: "Error", description: "Unable to analyze cycle right now. Please try again.", variant: "destructive" });
     } finally {
-      setAnalyzing(false);
+      setLoading(false);
     }
   };
 
-  const stepIndex = currentStep === "education" ? 0 : currentStep === "assessment" ? 1 : 2;
+  // ── Local fallback prediction ─────────────────────────
+  const localPrediction = (): PredictionResult => {
+    const avg = Math.round((formData.prev1 + formData.prev2 + formData.prev3) / 3);
+    const variance = Math.sqrt(
+      ((formData.prev1 - avg) ** 2 + (formData.prev2 - avg) ** 2 + (formData.prev3 - avg) ** 2) / 3
+    );
+    const isIrregular = variance > 5 || formData.prev1 < 21 || formData.prev2 < 21 || formData.prev3 < 21 ||
+      formData.prev1 > 35 || formData.prev2 > 35 || formData.prev3 > 35;
+
+    const nextDate = formData.last_period
+      ? format(addDays(formData.last_period, avg + (formData.stress === "High" ? 2 : 0)), "yyyy-MM-dd")
+      : "N/A";
+
+    return {
+      cycle_status: isIrregular ? "Irregular" : "Regular",
+      next_period_date: nextDate,
+      severity: isIrregular ? (variance > 8 ? "High" : "Moderate") : undefined,
+      confidence: isIrregular ? "Low" : "High",
+    };
+  };
+
+  // ── Reset handler ─────────────────────────────────────
+  const handleReset = () => {
+    setFormData({
+      age: 25, bmi: 22.0, sleep: 7, stress: "",
+      pcos: "", thyroid: "", period_duration: 5,
+      flow: "", cramps: "", pimples: "",
+      prev1: 28, prev2: 28, prev3: 28, last_period: undefined,
+    });
+    setResult(null);
+    setShowResult(false);
+  };
+
+  const isRegular = result?.cycle_status?.toLowerCase() === "regular";
+
+  // ── Progress calculation ──────────────────────────────
+  const filledFields = [
+    formData.stress, formData.pcos, formData.thyroid,
+    formData.flow, formData.cramps, formData.pimples,
+    formData.last_period ? "filled" : "",
+  ].filter(Boolean).length;
+  const progress = Math.round((filledFields / 7) * 100);
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main className="pt-20 sm:pt-24 pb-16">
         <div className="container mx-auto px-4 max-w-3xl">
-          {/* Progress */}
-          <div className="flex items-center justify-center gap-2 mb-8">
-            {["Learn", "Assess", "Results"].map((label, i) => (
-              <div key={label} className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                  i <= stepIndex ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}>{i + 1}</div>
-                <span className="text-xs text-muted-foreground hidden sm:inline">{label}</span>
-                {i < 2 && <div className={`w-8 h-0.5 ${i < stepIndex ? "bg-primary" : "bg-muted"}`} />}
-              </div>
-            ))}
-          </div>
 
-          {/* Education Step */}
-          {currentStep === "education" && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <div className="text-center mb-8">
-                <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Droplets className="w-10 h-10 text-primary" />
-                </div>
-                <h1 className="font-heading text-3xl font-bold text-foreground mb-2">Menstrual Cycle Assessment</h1>
-                <p className="text-muted-foreground">Answer a few quick questions to analyze your menstrual health and predict your next period.</p>
-              </div>
+          {/* ── Page Header ──────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center mb-10"
+          >
+            <div className="w-20 h-20 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-5">
+              <Droplets className="w-10 h-10 text-primary" />
+            </div>
+            <h1 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-3">
+              Menstrual Cycle Health Assessment
+            </h1>
+            <p className="text-muted-foreground text-base max-w-lg mx-auto">
+              Analyze your menstrual health and predict your next cycle using AI.
+            </p>
+          </motion.div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="glass-card rounded-xl p-5">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
-                      <Heart className="w-5 h-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-foreground">Personal Health</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Age, BMI, sleep hours, stress level, and medical conditions (PCOS, thyroid).</p>
-                </div>
-                <div className="glass-card rounded-xl p-5">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-lg bg-accent/15 flex items-center justify-center">
-                      <Calendar className="w-5 h-5 text-accent" />
-                    </div>
-                    <h3 className="font-semibold text-foreground">Period Details</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Duration, flow type, cramps severity, and last 3 cycle lengths.</p>
-                </div>
+          {/* ── Progress Bar ─────────────────────────── */}
+          {!showResult && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="text-muted-foreground">Form Progress</span>
+                <span className="font-medium text-primary">{progress}%</span>
               </div>
-
-              <div className="glass-card rounded-xl p-5 border-l-4 border-accent bg-accent/5">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-accent mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-foreground mb-1">Accuracy Notice</h4>
-                    <p className="text-sm text-muted-foreground">This is a screening tool, not a diagnosis. Consult a doctor for medical advice.</p>
-                  </div>
-                </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ duration: 0.4 }}
+                />
               </div>
-
-              <Button size="lg" className="w-full" onClick={() => setCurrentStep("assessment")}>
-                Start Assessment <Sparkles className="w-5 h-5 ml-2" />
-              </Button>
             </motion.div>
           )}
 
-          {/* Assessment Form */}
-          {currentStep === "assessment" && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <Button variant="ghost" size="sm" onClick={() => setCurrentStep("education")}>
-                <ArrowLeft className="w-4 h-4 mr-1" /> Back
-              </Button>
-
-              <h2 className="font-heading text-2xl font-bold text-foreground">Complete Your Assessment</h2>
-
-              {/* Basic Health */}
-              <div className="glass-card rounded-xl p-5 space-y-4">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Heart className="w-5 h-5 text-primary" /> Basic Health
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="age">Age</Label>
-                    <Input id="age" type="number" min={10} max={60} value={formData.age}
-                      onChange={e => updateField("age", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label htmlFor="bmi">BMI</Label>
-                    <Input id="bmi" type="number" step="0.1" min={10} max={50} value={formData.bmi}
-                      onChange={e => updateField("bmi", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label htmlFor="sleep">Sleep Hours</Label>
-                    <Input id="sleep" type="number" step="0.5" min={3} max={12} value={formData.sleep}
-                      onChange={e => updateField("sleep", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label>Stress Level</Label>
-                    <RadioGroup value={formData.stress} onValueChange={v => updateField("stress", v as "low" | "medium" | "high")} className="flex gap-3 mt-2">
-                      {(["low", "medium", "high"] as const).map(v => (
-                        <div key={v} className="flex items-center gap-1.5">
-                          <RadioGroupItem value={v} id={`stress-${v}`} />
-                          <Label htmlFor={`stress-${v}`} className="text-sm capitalize">{v}</Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                  </div>
-                </div>
-              </div>
-
-              {/* Medical Conditions */}
-              <div className="glass-card rounded-xl p-5 space-y-4">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Thermometer className="w-5 h-5 text-accent" /> Medical Conditions
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>PCOS</Label>
-                    <RadioGroup value={formData.pcos ? "yes" : "no"} onValueChange={v => updateField("pcos", v === "yes")} className="flex gap-3 mt-2">
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="yes" id="pcos-y" /><Label htmlFor="pcos-y" className="text-sm">Yes</Label></div>
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="no" id="pcos-n" /><Label htmlFor="pcos-n" className="text-sm">No</Label></div>
-                    </RadioGroup>
-                  </div>
-                  <div>
-                    <Label>Thyroid</Label>
-                    <RadioGroup value={formData.thyroid ? "yes" : "no"} onValueChange={v => updateField("thyroid", v === "yes")} className="flex gap-3 mt-2">
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="yes" id="thyroid-y" /><Label htmlFor="thyroid-y" className="text-sm">Yes</Label></div>
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="no" id="thyroid-n" /><Label htmlFor="thyroid-n" className="text-sm">No</Label></div>
-                    </RadioGroup>
-                  </div>
-                </div>
-              </div>
-
-              {/* Period Details */}
-              <div className="glass-card rounded-xl p-5 space-y-4">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Droplets className="w-5 h-5 text-primary" /> Period Details
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="period_duration">Period Duration (days)</Label>
-                    <Input id="period_duration" type="number" min={1} max={14} value={formData.period_duration}
-                      onChange={e => updateField("period_duration", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label>Flow Type</Label>
-                    <RadioGroup value={formData.flow} onValueChange={v => updateField("flow", v as "light" | "medium" | "heavy")} className="flex gap-3 mt-2">
-                      {(["light", "medium", "heavy"] as const).map(v => (
-                        <div key={v} className="flex items-center gap-1.5">
-                          <RadioGroupItem value={v} id={`flow-${v}`} />
-                          <Label htmlFor={`flow-${v}`} className="text-sm capitalize">{v}</Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                  </div>
-                  <div>
-                    <Label>Cramps Severity</Label>
-                    <RadioGroup value={formData.cramps} onValueChange={v => updateField("cramps", v as "low" | "medium" | "high")} className="flex gap-3 mt-2">
-                      {(["low", "medium", "high"] as const).map(v => (
-                        <div key={v} className="flex items-center gap-1.5">
-                          <RadioGroupItem value={v} id={`cramps-${v}`} />
-                          <Label htmlFor={`cramps-${v}`} className="text-sm capitalize">{v}</Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                  </div>
-                  <div>
-                    <Label>Pimples</Label>
-                    <RadioGroup value={formData.pimples ? "yes" : "no"} onValueChange={v => updateField("pimples", v === "yes")} className="flex gap-3 mt-2">
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="yes" id="pimples-y" /><Label htmlFor="pimples-y" className="text-sm">Yes</Label></div>
-                      <div className="flex items-center gap-1.5"><RadioGroupItem value="no" id="pimples-n" /><Label htmlFor="pimples-n" className="text-sm">No</Label></div>
-                    </RadioGroup>
-                  </div>
-                </div>
-              </div>
-
-              {/* Previous Cycles */}
-              <div className="glass-card rounded-xl p-5 space-y-4">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-teal" /> Previous Cycles
-                </h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="prev1">Cycle 1 (days)</Label>
-                    <Input id="prev1" type="number" min={15} max={60} value={formData.prev1}
-                      onChange={e => updateField("prev1", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label htmlFor="prev2">Cycle 2 (days)</Label>
-                    <Input id="prev2" type="number" min={15} max={60} value={formData.prev2}
-                      onChange={e => updateField("prev2", Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <Label htmlFor="prev3">Cycle 3 (days)</Label>
-                    <Input id="prev3" type="number" min={15} max={60} value={formData.prev3}
-                      onChange={e => updateField("prev3", Number(e.target.value))} />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="last_period">Last Period Start Date</Label>
-                  <Input id="last_period" type="date" value={formData.last_period}
-                    onChange={e => updateField("last_period", e.target.value)} />
-                </div>
-              </div>
-
-              <Button size="lg" className="w-full" onClick={handleSubmit}>
-                <Sparkles className="w-5 h-5 mr-2" /> Analyze My Cycle
-              </Button>
-
-              <HealthDisclaimer />
-            </motion.div>
-          )}
-
-          {/* Results */}
-          {currentStep === "results" && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              {analyzing ? (
-                <div className="text-center py-20">
-                  <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-                  <h3 className="font-heading text-xl font-semibold text-foreground">Analyzing your menstrual cycle...</h3>
-                  <p className="text-muted-foreground mt-2">Processing your health data</p>
-                </div>
-              ) : result ? (
-                <>
-                  {/* Status Card */}
-                  <div className={`glass-card rounded-xl p-6 border-l-4 ${result.isIrregular ? "border-destructive bg-destructive/5" : "border-teal bg-teal/5"}`}>
-                    <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-full flex items-center justify-center ${result.isIrregular ? "bg-destructive/20" : "bg-teal/20"}`}>
-                        {result.isIrregular
-                          ? <AlertCircle className="w-7 h-7 text-destructive" />
-                          : <CheckCircle2 className="w-7 h-7 text-teal" />}
+          <AnimatePresence mode="wait">
+            {!showResult ? (
+              <motion.div
+                key="form"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-6"
+              >
+                {/* ── Personal Information ───────────── */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center">
+                        <User className="w-5 h-5 text-primary" />
                       </div>
-                      <div>
-                        <h3 className="font-heading text-xl font-bold text-foreground">
-                          Cycle Status: {result.cycleStatus}
-                        </h3>
-                        <p className="text-muted-foreground">
-                          Next Period: {format(new Date(result.nextPeriodDate), "MMMM d, yyyy")}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Average Cycle: {result.averageCycleLength} days · Confidence: {result.confidenceLevel}
-                        </p>
+                      Personal Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="age" className="flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-muted-foreground" /> Age
+                      </Label>
+                      <Input id="age" type="number" min={10} max={60} value={formData.age}
+                        onChange={e => updateField("age", Number(e.target.value))}
+                        disabled={loading} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bmi" className="flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-muted-foreground" /> BMI
+                      </Label>
+                      <Input id="bmi" type="number" step={0.1} min={10} max={60} value={formData.bmi}
+                        onChange={e => updateField("bmi", Number(e.target.value))}
+                        disabled={loading} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="sleep" className="flex items-center gap-1.5">
+                        <BedDouble className="w-3.5 h-3.5 text-muted-foreground" /> Sleep Hours
+                      </Label>
+                      <Input id="sleep" type="number" step={0.5} min={1} max={16} value={formData.sleep}
+                        onChange={e => updateField("sleep", Number(e.target.value))}
+                        disabled={loading} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Brain className="w-3.5 h-3.5 text-muted-foreground" /> Stress Level
+                      </Label>
+                      <Select value={formData.stress} onValueChange={v => updateField("stress", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select level" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Low">Low</SelectItem>
+                          <SelectItem value="Medium">Medium</SelectItem>
+                          <SelectItem value="High">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ── Menstrual Information ──────────── */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <div className="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center">
+                        <Droplets className="w-5 h-5 text-accent" />
+                      </div>
+                      Menstrual Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="period_duration" className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Period Duration (days)
+                      </Label>
+                      <Input id="period_duration" type="number" min={1} max={15} value={formData.period_duration}
+                        onChange={e => updateField("period_duration", Number(e.target.value))}
+                        disabled={loading} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Droplets className="w-3.5 h-3.5 text-muted-foreground" /> Flow Type
+                      </Label>
+                      <Select value={formData.flow} onValueChange={v => updateField("flow", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select flow" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Light">Light</SelectItem>
+                          <SelectItem value="Medium">Medium</SelectItem>
+                          <SelectItem value="Heavy">Heavy</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-muted-foreground" /> Cramps Severity
+                      </Label>
+                      <Select value={formData.cramps} onValueChange={v => updateField("cramps", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select severity" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Low">Low</SelectItem>
+                          <SelectItem value="Medium">Medium</SelectItem>
+                          <SelectItem value="High">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-muted-foreground" /> Pimples
+                      </Label>
+                      <Select value={formData.pimples} onValueChange={v => updateField("pimples", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ── Health Conditions ──────────────── */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <div className="w-9 h-9 rounded-lg bg-destructive/15 flex items-center justify-center">
+                        <Pill className="w-5 h-5 text-destructive" />
+                      </div>
+                      Health Conditions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Thermometer className="w-3.5 h-3.5 text-muted-foreground" /> PCOS
+                      </Label>
+                      <Select value={formData.pcos} onValueChange={v => updateField("pcos", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <Heart className="w-3.5 h-3.5 text-muted-foreground" /> Thyroid
+                      </Label>
+                      <Select value={formData.thyroid} onValueChange={v => updateField("thyroid", v)} disabled={loading}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Yes">Yes</SelectItem>
+                          <SelectItem value="No">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* ── Previous Cycle History ─────────── */}
+                <Card className="border-border/50 shadow-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <div className="w-9 h-9 rounded-lg bg-teal/15 flex items-center justify-center">
+                        <CalendarIcon className="w-5 h-5 text-teal" />
+                      </div>
+                      Previous Cycle History
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="prev1">Cycle 1 (days)</Label>
+                        <Input id="prev1" type="number" min={15} max={60} value={formData.prev1}
+                          onChange={e => updateField("prev1", Number(e.target.value))}
+                          disabled={loading} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="prev2">Cycle 2 (days)</Label>
+                        <Input id="prev2" type="number" min={15} max={60} value={formData.prev2}
+                          onChange={e => updateField("prev2", Number(e.target.value))}
+                          disabled={loading} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="prev3">Cycle 3 (days)</Label>
+                        <Input id="prev3" type="number" min={15} max={60} value={formData.prev3}
+                          onChange={e => updateField("prev3", Number(e.target.value))}
+                          disabled={loading} />
                       </div>
                     </div>
-                  </div>
 
-                  {/* Recommendations */}
-                  {(["diet", "exercise", "lifestyle"] as const).map((cat) => {
-                    const icons = { diet: "🥗", exercise: "🏃‍♀️", lifestyle: "🧘‍♀️" };
-                    const titles = { diet: "Diet Advice", exercise: "Exercise Tips", lifestyle: "Lifestyle Guidance" };
-                    return (
-                      <div key={cat} className="glass-card rounded-xl p-5">
-                        <h4 className="font-semibold text-foreground mb-3">{icons[cat]} {titles[cat]}</h4>
-                        <ul className="space-y-2">
-                          {result.recommendations[cat].map((item, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                              <CheckCircle2 className="w-4 h-4 text-teal mt-0.5 flex-shrink-0" />
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" /> Last Period Date
+                      </Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" disabled={loading}
+                            className={cn("w-full justify-start text-left font-normal",
+                              !formData.last_period && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {formData.last_period ? format(formData.last_period, "PPP") : "Pick a date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={formData.last_period}
+                            onSelect={d => updateField("last_period", d)}
+                            disabled={d => d > new Date() || d < new Date("2020-01-01")}
+                            initialFocus
+                            className={cn("p-3 pointer-events-auto")}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </CardContent>
+                </Card>
 
-                  <div className="flex gap-3">
-                    <Button variant="outline" className="flex-1" onClick={() => navigate("/dashboard")}>
-                      Go to Dashboard
-                    </Button>
-                    <Button className="flex-1" onClick={() => navigate("/doctors")}>
-                      Find Specialist
-                    </Button>
-                  </div>
-
-                  <Button variant="ghost" className="w-full" onClick={() => { setResult(null); setCurrentStep("education"); }}>
-                    <ArrowLeft className="w-4 h-4 mr-2" /> Retake Assessment
+                {/* ── Action Buttons ─────────────────── */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    size="lg"
+                    className="flex-1 bg-gradient-to-r from-primary to-accent text-primary-foreground shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-300"
+                    onClick={handleSubmit}
+                    disabled={loading || !isFormValid()}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Analyzing your cycle patterns using AI...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 mr-2" />
+                        Predict My Cycle
+                      </>
+                    )}
                   </Button>
-                </>
-              ) : null}
-            </motion.div>
-          )}
+                  <Button variant="outline" size="lg" onClick={handleReset} disabled={loading}>
+                    <RotateCcw className="w-4 h-4 mr-2" /> Reset
+                  </Button>
+                </div>
+
+                {/* ── Disclaimer ─────────────────────── */}
+                <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-muted-foreground">
+                      This AI prediction is for educational purposes only and does not replace professional medical advice.
+                      Please consult a doctor for health concerns.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              /* ── Results Section ─────────────────── */
+              <motion.div
+                key="results"
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-6"
+              >
+                {/* Status Card */}
+                <Card className={cn(
+                  "border-2 shadow-lg overflow-hidden",
+                  isRegular ? "border-teal/50" : "border-destructive/50"
+                )}>
+                  <div className={cn(
+                    "h-2",
+                    isRegular ? "bg-gradient-to-r from-teal to-teal/60" : "bg-gradient-to-r from-destructive to-destructive/60"
+                  )} />
+                  <CardContent className="pt-8 pb-8 text-center space-y-4">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", delay: 0.2 }}
+                      className={cn(
+                        "w-20 h-20 rounded-full flex items-center justify-center mx-auto",
+                        isRegular ? "bg-teal/15" : "bg-destructive/15"
+                      )}
+                    >
+                      {isRegular ? (
+                        <CheckCircle2 className="w-10 h-10 text-teal" />
+                      ) : (
+                        <AlertTriangle className="w-10 h-10 text-destructive" />
+                      )}
+                    </motion.div>
+
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Cycle Status</p>
+                      <h2 className={cn(
+                        "font-heading text-3xl font-bold",
+                        isRegular ? "text-teal" : "text-destructive"
+                      )}>
+                        {result?.cycle_status}
+                      </h2>
+                      {result?.severity && (
+                        <p className="text-sm text-destructive mt-1">Severity: {result.severity}</p>
+                      )}
+                    </div>
+
+                    <div className="bg-muted/50 rounded-xl p-4 inline-block">
+                      <p className="text-sm text-muted-foreground mb-1">Next Period Date</p>
+                      <p className="font-heading text-xl font-bold text-foreground">
+                        {result?.next_period_date}
+                      </p>
+                    </div>
+
+                    <p className={cn(
+                      "text-sm max-w-md mx-auto",
+                      isRegular ? "text-teal" : "text-destructive"
+                    )}>
+                      {isRegular
+                        ? "Your menstrual cycle appears healthy. Maintain a balanced lifestyle."
+                        : "Your cycle shows irregularity. Consider the recommendations below and consult a doctor if needed."}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* Recommendation Cards */}
+                <h3 className="font-heading text-xl font-semibold text-foreground flex items-center gap-2">
+                  <Heart className="w-5 h-5 text-primary" /> Health Recommendations
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Diet */}
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                    <Card className="border-border/50 h-full">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center">
+                            <Apple className="w-5 h-5 text-primary" />
+                          </div>
+                          Diet Plan
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          <li className="flex items-start gap-2"><span className="text-primary mt-0.5">•</span> Iron rich foods (spinach, dates)</li>
+                          <li className="flex items-start gap-2"><span className="text-primary mt-0.5">•</span> Protein intake</li>
+                          <li className="flex items-start gap-2"><span className="text-primary mt-0.5">•</span> Reduce sugar & processed food</li>
+                          <li className="flex items-start gap-2"><span className="text-primary mt-0.5">•</span> Stay hydrated (2-3L water)</li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+
+                  {/* Exercise */}
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                    <Card className="border-border/50 h-full">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <div className="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center">
+                            <Dumbbell className="w-5 h-5 text-accent" />
+                          </div>
+                          Exercise
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          <li className="flex items-start gap-2"><span className="text-accent mt-0.5">•</span> Walking 20-30 min daily</li>
+                          <li className="flex items-start gap-2"><span className="text-accent mt-0.5">•</span> Yoga & Pranayama</li>
+                          <li className="flex items-start gap-2"><span className="text-accent mt-0.5">•</span> Light stretching</li>
+                          <li className="flex items-start gap-2"><span className="text-accent mt-0.5">•</span> Avoid intense workouts during period</li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+
+                  {/* Lifestyle */}
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+                    <Card className="border-border/50 h-full">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <div className="w-9 h-9 rounded-lg bg-teal/15 flex items-center justify-center">
+                            <Leaf className="w-5 h-5 text-teal" />
+                          </div>
+                          Lifestyle
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          <li className="flex items-start gap-2"><span className="text-teal mt-0.5">•</span> Sleep 7-8 hours daily</li>
+                          <li className="flex items-start gap-2"><span className="text-teal mt-0.5">•</span> Reduce stress levels</li>
+                          <li className="flex items-start gap-2"><span className="text-teal mt-0.5">•</span> Stay active throughout month</li>
+                          <li className="flex items-start gap-2"><span className="text-teal mt-0.5">•</span> Track symptoms consistently</li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button size="lg" onClick={handleReset} className="flex-1">
+                    <RotateCcw className="w-4 h-4 mr-2" /> Take Assessment Again
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => navigate("/dashboard")} className="flex-1">
+                    Go to Dashboard <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => navigate("/doctors")} className="flex-1">
+                    Find Specialist <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+
+                {/* Disclaimer */}
+                <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-muted-foreground">
+                      This AI prediction is for educational purposes only and does not replace professional medical advice.
+                      Please consult a doctor for health concerns.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
       <Footer />
