@@ -33,7 +33,7 @@ const Documents = lazy(() => import("./pages/Documents"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Contact = lazy(() => import("./pages/Contact"));
-const MenstrualAssessment = lazy(() => import("./pages/MenstrualAssessment"));
+
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Admin pages - lazy loaded
