@@ -92,7 +92,7 @@ const App = () => (
               <Route path="/modules/pcos" element={<ProtectedRoute><PCOSModule /></ProtectedRoute>} />
               <Route path="/modules/menstrual" element={<ProtectedRoute><MenstrualModule /></ProtectedRoute>} />
               <Route path="/modules/menopause" element={<ProtectedRoute><MenopauseModule /></ProtectedRoute>} />
-              <Route path="/menstrual-assessment" element={<ProtectedRoute><MenstrualAssessment /></ProtectedRoute>} />
+              <Route path="/menstrual-assessment" element={<Navigate to="/modules/menstrual" replace />} />
               <Route path="/chatbot" element={<ProtectedRoute><Chatbot /></ProtectedRoute>} />
               <Route path="/doctors" element={<ProtectedRoute><Doctors /></ProtectedRoute>} />
               <Route path="/schemes" element={<ProtectedRoute><Schemes /></ProtectedRoute>} />

@@ -81,7 +81,7 @@ const MenstrualModule = () => {
     // Save to Supabase
     if (user && prediction) {
       try {
-        await supabase.from("health_assessments").insert({
+        await supabase.from("health_assessments").insert([{
           user_id: user.id,
           assessment_type: used ? "menstrual_ml_api" : "menstrual_ml_local",
           risk_score: prediction.medical_score,
@@ -93,7 +93,7 @@ const MenstrualModule = () => {
             next_date: prediction.next_date,
             predicted_cycle: prediction.predicted_cycle,
           },
-        });
+        }]);
       } catch (err) {
         console.error("Error saving assessment:", err);
       }
