@@ -1,371 +1,228 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { HealthDisclaimer } from "@/components/health/HealthDisclaimer";
-import { SimpleCycleCalendar } from "@/components/cycle/SimpleCycleCalendar";
-import { SymptomLogger, SymptomData } from "@/components/cycle/SymptomLogger";
-import { CycleInsights } from "@/components/cycle/CycleInsights";
-import { NotificationSettings } from "@/components/cycle/NotificationSettings";
-import { NearbyDoctors } from "@/components/health/NearbyDoctors";
-import { OnboardingGuide } from "@/components/cycle/OnboardingGuide";
-import { QuickStartCard } from "@/components/cycle/QuickStartCard";
-import { CyclePhaseIndicator } from "@/components/cycle/CyclePhaseIndicator";
-import { useCycleTracking } from "@/hooks/useCycleTracking";
-import { 
-  Calendar, 
-  Activity, 
-  TrendingUp, 
-  Bell, 
-  Stethoscope,
-  Loader2,
-  Droplets,
-  BookOpen,
-  ArrowRight,
-  CheckCircle2,
-  Info,
-  Sparkles,
-  Heart,
-} from "lucide-react";
-import { format, isToday } from "date-fns";
+import { Droplets, Heart, Calendar, TrendingUp } from "lucide-react";
+import { MenstrualFormData, MenstrualPrediction, runAppPyLogic, computeLiveRisk } from "@/lib/menstrual-ml";
+import { AssessmentForm } from "@/components/menstrual/AssessmentForm";
+import { MenstrualResults } from "@/components/menstrual/MenstrualResults";
+import { CycleCalendar } from "@/components/menstrual/CycleCalendar";
+import { PhaseRing } from "@/components/menstrual/PhaseRing";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
-type TabValue = "home" | "calendar" | "symptoms" | "insights" | "settings" | "doctors";
+type TabId = "assess" | "tracker" | "insights" | "result";
+
+const TABS = [
+  { id: "assess" as const, icon: Heart, label: "Assess" },
+  { id: "tracker" as const, icon: Calendar, label: "Tracker" },
+  { id: "insights" as const, icon: TrendingUp, label: "Insights" },
+];
+
+const DEFAULT_FORM: MenstrualFormData = {
+  age: 25, bmi: 22.0, sleep: 7,
+  stress: "", pcos: "", thyroid: "",
+  period_duration: 5, flow: "", cramps: "", pimples: "",
+  prev1: 28, prev2: 29, prev3: 28,
+  last_period: "",
+};
 
 const MenstrualModule = () => {
-  const {
-    cycleLogs,
-    settings,
-    loading,
-    saving,
-    prediction,
-    insights,
-    notificationSchedule,
-    logPeriod,
-    endPeriod,
-    logSymptoms,
-    updateNotificationSettings,
-    deleteAllData,
-  } = useCycleTracking();
+  const { user } = useAuth();
+  const [tab, setTab] = useState<TabId>("assess");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<MenstrualPrediction | null>(null);
+  const [apiUsed, setApiUsed] = useState(false);
+  const [form, setForm] = useState<MenstrualFormData>({ ...DEFAULT_FORM });
 
-  const [activeTab, setActiveTab] = useState<TabValue>("home");
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const setField = useCallback((key: keyof MenstrualFormData, value: MenstrualFormData[keyof MenstrualFormData]) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  }, []);
 
-  // Check if user is new (no cycles logged)
-  useEffect(() => {
-    if (!loading && cycleLogs.length === 0) {
-      const hasSeenOnboarding = localStorage.getItem("menstrual_onboarding_complete");
-      if (!hasSeenOnboarding) {
-        setShowOnboarding(true);
+  const avgCycle = Math.round((form.prev1 + form.prev2 + form.prev3) / 3);
+  const dayInCycle = form.last_period
+    ? Math.floor((Date.now() - new Date(form.last_period + "T12:00:00").getTime()) / 86400000)
+    : 14;
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    let prediction: MenstrualPrediction | null = null;
+    let used = false;
+
+    try {
+      const body = new FormData();
+      Object.entries(form).forEach(([k, v]) => body.append(k, String(v)));
+      const res = await fetch("http://localhost:8000/predict", { method: "POST", body });
+      if (res.ok) {
+        const data = await res.json();
+        prediction = {
+          result: data.cycle_status,
+          severity: data.severity || "Moderate",
+          medical_score: data.medical_score ?? computeLiveRisk(form),
+          ml_result: data.ml_result || data.cycle_status,
+          mean_cycle: (form.prev1 + form.prev2 + form.prev3) / 3,
+          variation: Math.max(form.prev1, form.prev2, form.prev3) - Math.min(form.prev1, form.prev2, form.prev3),
+          predicted_cycle: data.predicted_cycle || Math.floor(form.prev1 * 0.4 + form.prev2 * 0.3 + form.prev3 * 0.3),
+          next_date: data.next_period_date,
+          next_date_obj: new Date(data.next_period_date),
+        };
+        used = true;
+      }
+    } catch { /* API unavailable */ }
+
+    if (!prediction) {
+      prediction = runAppPyLogic(form);
+    }
+
+    // Save to Supabase
+    if (user && prediction) {
+      try {
+        await supabase.from("health_assessments").insert([{
+          user_id: user.id,
+          assessment_type: used ? "menstrual_ml_api" : "menstrual_ml_local",
+          risk_score: prediction.medical_score,
+          risk_category: prediction.result === "Regular" ? "low" : (prediction.severity === "High" ? "high" : "medium"),
+          responses: JSON.parse(JSON.stringify(form)),
+          recommendations: JSON.parse(JSON.stringify({
+            cycle_status: prediction.result,
+            severity: prediction.severity,
+            next_date: prediction.next_date,
+            predicted_cycle: prediction.predicted_cycle,
+          })),
+        }]);
+      } catch (err) {
+        console.error("Error saving assessment:", err);
       }
     }
-  }, [loading, cycleLogs.length]);
 
-  const handleOnboardingComplete = () => {
-    localStorage.setItem("menstrual_onboarding_complete", "true");
-    setShowOnboarding(false);
-    setActiveTab("calendar");
+    setApiUsed(used);
+    setResult(prediction);
+    setTimeout(() => { setLoading(false); setTab("result"); }, used ? 0 : 800);
   };
 
-  const handleLogPeriod = async (date: Date) => {
-    await logPeriod(date);
-    setActiveTab("symptoms");
-    setSelectedDate(date);
+  const handleReset = () => {
+    setResult(null);
+    setTab("assess");
+    setForm({ ...DEFAULT_FORM });
   };
-
-  const handleSaveSymptoms = async (symptoms: SymptomData) => {
-    const symptomsRecord: Record<string, unknown> = { ...symptoms };
-    await logSymptoms(selectedDate, symptomsRecord);
-  };
-
-  // Check if user logged symptoms today
-  const hasLoggedToday = cycleLogs.some(log => 
-    log.start_date === format(new Date(), "yyyy-MM-dd")
-  );
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="pt-24 pb-16 flex items-center justify-center min-h-[60vh]">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-muted-foreground">Loading your cycle data...</p>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  // Show onboarding for new users
-  if (showOnboarding) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="pt-20 sm:pt-24 pb-16">
-          <div className="container mx-auto px-4">
-            <OnboardingGuide 
-              onComplete={handleOnboardingComplete}
-              onSkip={handleOnboardingComplete}
-            />
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main className="pt-20 sm:pt-24 pb-16">
-        <div className="container mx-auto px-4 max-w-4xl">
+        <div className="container mx-auto px-4 max-w-xl">
           {/* Header */}
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4 sm:mb-5">
-              <Droplets className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
+          <div className="text-center mb-6 relative">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-48 bg-gradient-radial from-primary/8 to-transparent pointer-events-none" />
+            <div className="w-[76px] h-[76px] rounded-3xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 flex items-center justify-center mx-auto mb-4 shadow-md animate-bounce-slow">
+              <Droplets className="w-9 h-9 text-primary" />
             </div>
-            <h1 className="font-heading text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-2">
-              Your Cycle Tracker
+            <h1 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-2">
+              Menstrual Cycle<br />Health Assessment
             </h1>
-            <p className="text-muted-foreground text-sm sm:text-base max-w-xl mx-auto">
-              Track your period, understand your body, and get smart predictions
+            <p className="text-sm text-muted-foreground tracking-wide">
+              AI-powered analysis · exact medical scoring
             </p>
           </div>
 
-          {/* Main Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
-            <TabsList className="grid grid-cols-3 sm:grid-cols-6 mb-6 h-auto p-1">
-              <TabsTrigger value="home" className="gap-1.5 text-xs sm:text-sm py-2">
-                <Heart className="w-4 h-4" />
-                <span className="hidden sm:inline">Home</span>
-              </TabsTrigger>
-              <TabsTrigger value="calendar" className="gap-1.5 text-xs sm:text-sm py-2">
-                <Calendar className="w-4 h-4" />
-                <span className="hidden sm:inline">Calendar</span>
-              </TabsTrigger>
-              <TabsTrigger value="symptoms" className="gap-1.5 text-xs sm:text-sm py-2">
-                <Activity className="w-4 h-4" />
-                <span className="hidden sm:inline">Symptoms</span>
-              </TabsTrigger>
-              <TabsTrigger value="insights" className="gap-1.5 text-xs sm:text-sm py-2">
-                <TrendingUp className="w-4 h-4" />
-                <span className="hidden sm:inline">Insights</span>
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="gap-1.5 text-xs sm:text-sm py-2">
-                <Bell className="w-4 h-4" />
-                <span className="hidden sm:inline">Reminders</span>
-              </TabsTrigger>
-              <TabsTrigger value="doctors" className="gap-1.5 text-xs sm:text-sm py-2">
-                <Stethoscope className="w-4 h-4" />
-                <span className="hidden sm:inline">Doctors</span>
-              </TabsTrigger>
-            </TabsList>
+          {/* Tabs (hide on result) */}
+          {tab !== "result" && (
+            <div className="flex gap-0 bg-card border border-border rounded-xl p-1 mb-5 shadow-sm">
+              {TABS.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-semibold uppercase tracking-wide transition-all",
+                    tab === t.id
+                      ? "bg-primary text-primary-foreground shadow-md"
+                      : "text-muted-foreground hover:text-primary"
+                  )}
+                >
+                  <t.icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-            {/* Home Tab - Dashboard View */}
-            <TabsContent value="home" className="space-y-6 animate-fade-up">
-              {/* Prediction Banner */}
-              {prediction && prediction.days_until > 0 && (
-                <div className="glass-card rounded-xl p-4 bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-7 h-7 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-heading text-lg font-semibold text-foreground">
-                        {prediction.days_until <= 3 
-                          ? "Period Coming Soon!" 
-                          : `~${prediction.days_until} days until period`}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Expected around {format(new Date(prediction.predicted_start_date), "MMMM d")}
-                        {prediction.confidence_level === "high" && " 🎯"}
-                      </p>
-                    </div>
-                  </div>
+          {/* Assessment Tab */}
+          {tab === "assess" && (
+            <AssessmentForm form={form} setField={setField} onSubmit={handleSubmit} loading={loading} />
+          )}
+
+          {/* Tracker Tab */}
+          {tab === "tracker" && (
+            <div className="space-y-4 animate-fade-up">
+              <Card>
+                <CardContent className="p-5">
+                  <h3 className="font-heading text-base font-semibold text-foreground mb-4">Cycle Phase</h3>
+                  <PhaseRing dayInCycle={dayInCycle} avgCycle={avgCycle} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-5">
+                  <h3 className="font-heading text-base font-semibold text-foreground mb-4">Calendar View</h3>
+                  <CycleCalendar lastPeriod={form.last_period} avgCycle={avgCycle} periodDuration={form.period_duration} />
+                </CardContent>
+              </Card>
+              {!form.last_period && (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  Complete the assessment to see your cycle data here.
                 </div>
               )}
+            </div>
+          )}
 
-              {/* Cycle Phase Indicator */}
-              <CyclePhaseIndicator
-                lastPeriodStart={cycleLogs.length > 0 ? cycleLogs[0].start_date : null}
-                averageCycleLength={insights.averageCycleLength}
-                averagePeriodLength={insights.averagePeriodLength}
-                prediction={prediction}
-              />
-
-              {/* Quick Start Card */}
-              <QuickStartCard
-                cycleCount={cycleLogs.length}
-                hasLoggedToday={hasLoggedToday}
-                onLogPeriod={() => setActiveTab("calendar")}
-                onLogSymptoms={() => setActiveTab("symptoms")}
-                onViewInsights={() => setActiveTab("insights")}
-              />
-
-              {/* Quick Stats */}
-              {cycleLogs.length >= 2 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="glass-card rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-foreground">{insights.averageCycleLength}</div>
-                    <div className="text-xs text-muted-foreground">Cycle Days</div>
+          {/* Insights Tab */}
+          {tab === "insights" && (
+            <div className="space-y-4 animate-fade-up">
+              {result ? (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { value: avgCycle, label: "Avg Cycle" },
+                      { value: result.medical_score, label: "Risk Score" },
+                      { value: form.period_duration, label: "Period Days" },
+                    ].map(stat => (
+                      <Card key={stat.label} className="text-center">
+                        <CardContent className="p-4">
+                          <div className="font-heading text-2xl font-bold text-primary">{stat.value}</div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">{stat.label}</div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                  <div className="glass-card rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-foreground">{insights.averagePeriodLength}</div>
-                    <div className="text-xs text-muted-foreground">Period Days</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-4 text-center">
-                    <div className={`text-2xl font-bold ${insights.isRegular ? "text-teal" : "text-accent"}`}>
-                      {insights.isRegular ? "✓" : "~"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {insights.isRegular ? "Regular" : "Variable"}
-                    </div>
-                  </div>
-                  <div className="glass-card rounded-xl p-4 text-center">
-                    <div className="text-2xl font-bold text-foreground">{cycleLogs.length}</div>
-                    <div className="text-xs text-muted-foreground">Cycles Tracked</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Help Section */}
-              <div className="glass-card rounded-xl p-4 bg-muted/30">
-                <div className="flex items-start gap-3">
-                  <Info className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-foreground text-sm mb-1">Need Help?</p>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Understanding your cycle is a journey. The more you track, the better your predictions become!
-                    </p>
-                    <Button 
-                      variant="link" 
-                      className="p-0 h-auto text-xs text-primary"
-                      onClick={() => {
-                        localStorage.removeItem("menstrual_onboarding_complete");
-                        setShowOnboarding(true);
-                      }}
-                    >
-                      View Tutorial Again <ArrowRight className="w-3 h-3 ml-1" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* Calendar Tab */}
-            <TabsContent value="calendar" className="animate-fade-up">
-              {cycleLogs.length === 0 && (
-                <div className="text-center py-8 mb-6 glass-card rounded-xl">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                    <Calendar className="w-8 h-8 text-primary" />
-                  </div>
-                  <h3 className="font-heading text-xl font-semibold text-foreground mb-2">
-                    Log Your First Period
-                  </h3>
-                  <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-4">
-                    Tap any date on the calendar below to mark when your period started. You can log past periods too!
-                  </p>
-                </div>
-              )}
-              
-              <SimpleCycleCalendar
-                cycleLogs={cycleLogs}
-                prediction={prediction}
-                averageCycleLength={insights.averageCycleLength}
-                onLogPeriod={handleLogPeriod}
-                onSelectDate={setSelectedDate}
-              />
-            </TabsContent>
-
-            {/* Symptoms Tab */}
-            <TabsContent value="symptoms" className="animate-fade-up">
-              <SymptomLogger
-                date={selectedDate}
-                onSave={handleSaveSymptoms}
-                saving={saving}
-                initialData={cycleLogs.find(log => log.start_date === format(selectedDate, "yyyy-MM-dd")) as SymptomData | undefined}
-              />
-            </TabsContent>
-
-            {/* Insights Tab */}
-            <TabsContent value="insights" className="animate-fade-up">
-              {cycleLogs.length < 2 ? (
-                <div className="text-center py-12 glass-card rounded-xl">
-                  <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                    <TrendingUp className="w-10 h-10 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-heading text-xl font-semibold text-foreground mb-2">
-                    More Data Needed
-                  </h3>
-                  <p className="text-muted-foreground mb-2 max-w-md mx-auto">
-                    Log at least <span className="font-semibold text-foreground">2 complete cycles</span> to see personalized insights.
-                  </p>
-                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-6">
-                    <div className="flex items-center gap-1">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${cycleLogs.length >= 1 ? "bg-teal/20" : "bg-muted"}`}>
-                        {cycleLogs.length >= 1 ? (
-                          <CheckCircle2 className="w-4 h-4 text-teal" />
-                        ) : (
-                          <span className="text-xs">1</span>
-                        )}
+                  <Card>
+                    <CardContent className="p-5">
+                      <h3 className="font-heading text-base font-semibold text-foreground mb-3">Your Analysis</h3>
+                      <div className="space-y-2 text-sm text-muted-foreground">
+                        <p>• Cycle Status: <span className={result.result === "Regular" ? "text-teal font-semibold" : "text-destructive font-semibold"}>{result.result}</span></p>
+                        <p>• Predicted Cycle Length: <span className="text-foreground font-medium">{result.predicted_cycle} days</span></p>
+                        <p>• Next Period: <span className="text-foreground font-medium">{result.next_date}</span></p>
+                        <p>• Cycle Variation: <span className="text-foreground font-medium">{result.variation} days</span></p>
                       </div>
-                    </div>
-                    <div className="w-8 h-0.5 bg-muted" />
-                    <div className="flex items-center gap-1">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${cycleLogs.length >= 2 ? "bg-teal/20" : "bg-muted"}`}>
-                        {cycleLogs.length >= 2 ? (
-                          <CheckCircle2 className="w-4 h-4 text-teal" />
-                        ) : (
-                          <span className="text-xs">2</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <Button onClick={() => setActiveTab("calendar")} variant="outline">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Go to Calendar
-                  </Button>
-                </div>
+                    </CardContent>
+                  </Card>
+                </>
               ) : (
-                <CycleInsights insights={insights} cycleCount={cycleLogs.length} />
-              )}
-            </TabsContent>
-
-            {/* Settings Tab */}
-            <TabsContent value="settings" className="animate-fade-up">
-              <NotificationSettings
-                settings={settings}
-                notificationSchedule={notificationSchedule}
-                isIrregular={!insights.isRegular}
-                onUpdate={updateNotificationSettings}
-                onDeleteData={deleteAllData}
-                saving={saving}
-              />
-            </TabsContent>
-
-            {/* Doctors Tab */}
-            <TabsContent value="doctors" className="animate-fade-up">
-              <div className="space-y-6">
-                <div className="text-center mb-6">
-                  <h2 className="font-heading text-xl font-semibold text-foreground mb-2">
-                    Find Nearby Specialists
-                  </h2>
-                  <p className="text-muted-foreground text-sm">
-                    Connect with qualified gynecologists for professional care
-                  </p>
+                <div className="text-center py-12">
+                  <TrendingUp className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
+                  <h3 className="font-heading text-lg font-semibold text-foreground mb-2">No Data Yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">Complete an assessment to see insights.</p>
+                  <Button onClick={() => setTab("assess")}>Start Assessment</Button>
                 </div>
-                <NearbyDoctors specialty="gynecologist" />
-              </div>
-            </TabsContent>
-          </Tabs>
+              )}
+            </div>
+          )}
 
-          {/* Global Disclaimer */}
-          <div className="mt-8">
-            <HealthDisclaimer />
-          </div>
+          {/* Result Tab */}
+          {tab === "result" && result && (
+            <MenstrualResults prediction={result} form={form} apiUsed={apiUsed} onReset={handleReset} />
+          )}
         </div>
       </main>
       <Footer />
