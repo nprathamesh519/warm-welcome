@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MenstrualFormData, computeLiveRisk } from "@/lib/menstrual-ml";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,11 +51,8 @@ function ChipSelect({ options, value, onChange }: { options: { label: string; va
 }
 
 export function AssessmentForm({ form, setField, onSubmit, loading }: AssessmentFormProps) {
-  const [step, setStep] = [0, 0]; // We'll use internal state
-  return <AssessmentFormInner form={form} setField={setField} onSubmit={onSubmit} loading={loading} />;
-}
+  const [currentStep, setCurrentStep] = useState(0);
 
-function AssessmentFormInner({ form, setField, onSubmit, loading }: AssessmentFormProps) {
   const stepOK = [
     !!form.stress,
     !!form.flow && !!form.cramps && !!form.pimples,
@@ -68,9 +66,6 @@ function AssessmentFormInner({ form, setField, onSubmit, loading }: AssessmentFo
   const riskNote = riskScore < 3 ? "Low risk — cycle likely regular"
     : riskScore < 6 ? "Moderate concern — possible irregularity"
     : "High concern — irregularity very likely";
-
-  // Use local step state
-  const [currentStep, setCurrentStep] = __React_useState(0);
 
   return (
     <div className="space-y-4">
@@ -126,7 +121,7 @@ function AssessmentFormInner({ form, setField, onSubmit, loading }: AssessmentFo
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-[10px] uppercase tracking-wide">Age</Label>
                 <div className="flex items-center gap-2">
@@ -344,6 +339,3 @@ function AssessmentFormInner({ form, setField, onSubmit, loading }: AssessmentFo
     </div>
   );
 }
-
-// Need useState import workaround
-import { useState as __React_useState } from "react";
