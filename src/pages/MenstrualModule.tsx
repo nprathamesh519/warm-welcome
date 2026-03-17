@@ -86,13 +86,13 @@ const MenstrualModule = () => {
           assessment_type: used ? "menstrual_ml_api" : "menstrual_ml_local",
           risk_score: prediction.medical_score,
           risk_category: prediction.result === "Regular" ? "low" : (prediction.severity === "High" ? "high" : "medium"),
-          responses: form as unknown as Record<string, unknown>,
-          recommendations: {
+          responses: JSON.parse(JSON.stringify(form)),
+          recommendations: JSON.parse(JSON.stringify({
             cycle_status: prediction.result,
             severity: prediction.severity,
             next_date: prediction.next_date,
             predicted_cycle: prediction.predicted_cycle,
-          },
+          })),
         }]);
       } catch (err) {
         console.error("Error saving assessment:", err);
