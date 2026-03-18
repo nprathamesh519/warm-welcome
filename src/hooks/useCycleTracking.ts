@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "./use-toast";
-import { differenceInDays, addDays, format, subDays, parseISO, isValid } from "date-fns";
+import { differenceInDays, addDays, format, parseISO, isValid } from "date-fns";
+import { decodeReminderDays } from "@/lib/notification-preferences";
 
 interface CycleLog {
   id: string;
