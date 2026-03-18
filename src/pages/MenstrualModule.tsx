@@ -109,33 +109,33 @@ const MenstrualModule = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="pt-20 sm:pt-24 pb-16">
+      <main className="pt-20 sm:pt-24 pb-20">
         <div className="container mx-auto px-4 max-w-xl">
           {/* Header */}
-          <div className="text-center mb-6 relative">
+          <div className="text-center mb-5 relative">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-56 bg-gradient-radial from-primary/8 to-transparent pointer-events-none" />
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/10 animate-bounce-slow">
-              <Droplets className="w-10 h-10 text-primary" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-primary/10">
+              <Droplets className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
             </div>
-            <h1 className="font-heading text-3xl sm:text-4xl font-bold text-foreground mb-2">
-              Menstrual Cycle<br />
-              <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Health Assessment</span>
+            <h1 className="font-heading text-2xl sm:text-3xl font-bold text-foreground mb-1">
+              Menstrual Cycle
+              <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"> Health</span>
             </h1>
-            <p className="text-sm text-muted-foreground tracking-wide flex items-center justify-center gap-2">
+            <p className="text-xs text-muted-foreground tracking-wide flex items-center justify-center gap-2">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal animate-pulse" />
-              AI-powered analysis · exact medical scoring
+              AI-powered analysis · medical scoring
             </p>
           </div>
 
           {/* Tabs (hide on result) */}
           {tab !== "result" && (
-            <div className="flex gap-0 bg-card border border-border rounded-2xl p-1.5 mb-6 shadow-sm">
+            <div className="flex gap-0 bg-card border border-border rounded-2xl p-1 mb-5 shadow-sm">
               {TABS.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   className={cn(
-                    "flex-1 flex flex-col items-center justify-center gap-0.5 py-3 rounded-xl text-[11px] font-semibold uppercase tracking-wide transition-all duration-200",
+                    "flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wide transition-all duration-200",
                     tab === t.id
                       ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                       : "text-muted-foreground hover:text-primary hover:bg-primary/5"
@@ -159,36 +159,65 @@ const MenstrualModule = () => {
           {/* Tracker Tab */}
           {tab === "tracker" && (
             <div className="space-y-4 animate-fade-up">
-              <Card className="border-primary/10 shadow-md">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <Clock className="w-4 h-4 text-primary" />
-                    <h3 className="font-heading text-base font-semibold text-foreground">Current Cycle Phase</h3>
+              {/* Phase Ring */}
+              <Card className="border-primary/10 shadow-md overflow-hidden">
+                <div className="h-1 bg-gradient-to-r from-primary via-teal to-accent" />
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-semibold text-foreground">Current Phase</h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        {form.last_period ? `Since ${form.last_period}` : "Set your last period date"}
+                      </p>
+                    </div>
                   </div>
                   <PhaseRing dayInCycle={dayInCycle} avgCycle={avgCycle} />
-                  <div className="mt-4 text-center">
-                    <p className="text-xs text-muted-foreground">
-                      {form.last_period 
-                        ? `Based on your last period starting ${form.last_period}`
-                        : "Complete the assessment to see accurate cycle data"}
-                    </p>
-                  </div>
                 </CardContent>
               </Card>
-              <Card className="border-primary/10 shadow-md">
-                <CardContent className="p-6">
+
+              {/* Cycle Calendar */}
+              <Card className="border-primary/10 shadow-md overflow-hidden">
+                <div className="h-1 bg-gradient-to-r from-primary to-teal" />
+                <CardContent className="p-5">
                   <div className="flex items-center gap-2 mb-4">
-                    <Calendar className="w-4 h-4 text-primary" />
-                    <h3 className="font-heading text-base font-semibold text-foreground">Cycle Calendar</h3>
+                    <div className="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center">
+                      <Calendar className="w-4 h-4 text-teal" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading text-sm font-semibold text-foreground">Cycle Calendar</h3>
+                      <p className="text-[11px] text-muted-foreground">Tap any day for details</p>
+                    </div>
                   </div>
                   <CycleCalendar lastPeriod={form.last_period} avgCycle={avgCycle} periodDuration={form.period_duration} />
                 </CardContent>
               </Card>
+
+              {/* Quick stats bar */}
+              {form.last_period && (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: `${avgCycle}d`, label: "Avg Cycle", color: "text-primary", bg: "bg-primary/5 border-primary/10" },
+                    { value: `${form.period_duration}d`, label: "Period", color: "text-accent", bg: "bg-accent/5 border-accent/10" },
+                    { value: `Day ${dayInCycle}`, label: "Current", color: "text-teal", bg: "bg-teal/5 border-teal/10" },
+                  ].map(s => (
+                    <div key={s.label} className={cn("text-center p-3 rounded-xl border", s.bg)}>
+                      <div className={cn("font-heading text-lg font-bold", s.color)}>{s.value}</div>
+                      <div className="text-[9px] text-muted-foreground uppercase tracking-wider">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {!form.last_period && (
-                <div className="text-center py-8 space-y-3">
-                  <Info className="w-10 h-10 text-muted-foreground/30 mx-auto" />
-                  <p className="text-sm text-muted-foreground">Complete the assessment to see your cycle data here.</p>
-                  <Button variant="outline" onClick={() => setTab("assess")}>Go to Assessment</Button>
+                <div className="text-center py-6 space-y-3 bg-muted/20 rounded-2xl border border-dashed border-border">
+                  <Info className="w-8 h-8 text-muted-foreground/30 mx-auto" />
+                  <p className="text-sm text-muted-foreground">Complete the assessment first to see your cycle data.</p>
+                  <Button variant="outline" size="sm" onClick={() => setTab("assess")} className="gap-1.5">
+                    <Heart className="w-3.5 h-3.5" /> Go to Assessment
+                  </Button>
                 </div>
               )}
             </div>
@@ -199,39 +228,37 @@ const MenstrualModule = () => {
             <div className="space-y-4 animate-fade-up">
               {result ? (
                 <>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      { value: avgCycle, label: "Avg Cycle", unit: "days", color: "text-primary" },
-                      { value: result.medical_score, label: "Risk Score", unit: "pts", color: result.medical_score < 3 ? "text-teal" : "text-primary" },
-                      { value: form.period_duration, label: "Period", unit: "days", color: "text-accent" },
+                      { value: avgCycle, label: "Avg Cycle", unit: "days", color: "text-primary", bg: "bg-primary/5 border-primary/10" },
+                      { value: result.medical_score, label: "Risk Score", unit: "pts", color: result.medical_score < 3 ? "text-teal" : "text-primary", bg: result.medical_score < 3 ? "bg-teal/5 border-teal/10" : "bg-primary/5 border-primary/10" },
+                      { value: form.period_duration, label: "Period", unit: "days", color: "text-accent", bg: "bg-accent/5 border-accent/10" },
                     ].map(stat => (
-                      <Card key={stat.label} className="text-center border-primary/10">
-                        <CardContent className="p-4">
-                          <div className={cn("font-heading text-3xl font-bold", stat.color)}>{stat.value}</div>
-                          <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-1">{stat.unit}</div>
-                          <div className="text-[10px] text-muted-foreground font-medium mt-0.5">{stat.label}</div>
-                        </CardContent>
-                      </Card>
+                      <div key={stat.label} className={cn("text-center p-3 rounded-xl border", stat.bg)}>
+                        <div className={cn("font-heading text-2xl font-bold", stat.color)}>{stat.value}</div>
+                        <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">{stat.unit}</div>
+                        <div className="text-[10px] text-muted-foreground font-medium">{stat.label}</div>
+                      </div>
                     ))}
                   </div>
                   <Card className="border-primary/10 shadow-md">
-                    <CardContent className="p-5">
-                      <div className="flex items-center gap-2 mb-4">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-3">
                         <BarChart3 className="w-4 h-4 text-primary" />
-                        <h3 className="font-heading text-base font-semibold text-foreground">Your Analysis Summary</h3>
+                        <h3 className="font-heading text-sm font-semibold text-foreground">Analysis Summary</h3>
                       </div>
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {[
                           { label: "Cycle Status", value: result.result, ok: result.result === "Regular" },
-                          { label: "Predicted Cycle Length", value: `${result.predicted_cycle} days`, ok: true },
+                          { label: "Predicted Cycle", value: `${result.predicted_cycle} days`, ok: true },
                           { label: "Next Period", value: result.next_date, ok: true },
-                          { label: "Cycle Variation", value: `${result.variation} days`, ok: result.variation <= 7 },
+                          { label: "Variation", value: `${result.variation} days`, ok: result.variation <= 7 },
                           { label: "Severity", value: result.severity, ok: result.severity === "Moderate" },
                         ].map(item => (
                           <div key={item.label} className="flex justify-between items-center py-2 px-3 rounded-lg bg-muted/30">
                             <span className="text-sm text-muted-foreground">{item.label}</span>
                             <Badge variant="secondary" className={cn(
-                              "font-semibold",
+                              "text-xs font-semibold",
                               item.ok ? "bg-teal/10 text-teal" : "bg-primary/10 text-primary"
                             )}>{item.value}</Badge>
                           </div>
@@ -241,13 +268,15 @@ const MenstrualModule = () => {
                   </Card>
                 </>
               ) : (
-                <div className="text-center py-16 space-y-4">
-                  <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto">
-                    <TrendingUp className="w-8 h-8 text-muted-foreground/30" />
+                <div className="text-center py-12 space-y-4 bg-muted/20 rounded-2xl border border-dashed border-border">
+                  <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto">
+                    <TrendingUp className="w-7 h-7 text-muted-foreground/30" />
                   </div>
-                  <h3 className="font-heading text-xl font-semibold text-foreground">No Data Yet</h3>
-                  <p className="text-sm text-muted-foreground max-w-xs mx-auto">Complete an assessment to see detailed insights about your cycle health.</p>
-                  <Button onClick={() => setTab("assess")} className="shadow-lg shadow-primary/20">Start Assessment</Button>
+                  <h3 className="font-heading text-lg font-semibold text-foreground">No Data Yet</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs mx-auto">Complete an assessment to see your cycle insights.</p>
+                  <Button onClick={() => setTab("assess")} size="sm" className="shadow-lg shadow-primary/20 gap-1.5">
+                    <Heart className="w-3.5 h-3.5" /> Start Assessment
+                  </Button>
                 </div>
               )}
             </div>
