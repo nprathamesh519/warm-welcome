@@ -315,38 +315,28 @@ export function useCycleTracking() {
     };
   }, [cycleLogs, insights]);
 
-  // Get notification schedule
   const getNotificationSchedule = useMemo(() => {
     if (!prediction || !settings?.notification_enabled) return [];
 
     const schedule: { date: string; message: string; daysBefor: number }[] = [];
-    const reminderDays = settings.reminder_days || [3, 2, 1];
-    const isIrregular = !insights.isRegular;
+    const reminderDays = decodeReminderDays(settings.reminder_days);
 
-    // Use 5-3-1 for irregular, 3-2-1 for regular
-    const effectiveDays = isIrregular ? [5, 3, 1] : reminderDays;
-
-    effectiveDays.forEach(days => {
-      const notifyDate = subDays(parseISO(prediction.predicted_start_date), days);
+    reminderDays.forEach((days) => {
+      const notifyDate = addDays(parseISO(prediction.predicted_start_date), -days);
       if (notifyDate >= new Date()) {
-        const message = days === 1 
-          ? "Your period may start tomorrow. This is an estimate 🌸"
-          : days === 2
-          ? "Your period may start in 2 days. Take care 💗"
-          : days === 3
-          ? "Your period may start in 3 days. Stay prepared 🩷"
-          : `Your period may start in about ${days} days (estimate) 🌸`;
-        
         schedule.push({
           date: format(notifyDate, "yyyy-MM-dd"),
-          message: isIrregular ? message.replace("may", "might") : message,
+          message:
+            days === 1
+              ? "💜 Your period is expected soon. Keep your essentials ready and take care!"
+              : "💜 Your period is expected in 2 days. Keep your essentials ready and take care!",
           daysBefor: days,
         });
       }
     });
 
     return schedule;
-  }, [prediction, settings, insights]);
+  }, [prediction, settings]);
 
   // Log a new period
   const logPeriod = async (startDate: Date, symptoms?: Partial<CycleLog>) => {

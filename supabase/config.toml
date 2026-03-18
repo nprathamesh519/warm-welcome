@@ -1,1 +1,10 @@
 project_id = "cuxaxzeaemljpytbfcsp"
+
+[functions.ml-predict]
+verify_jwt = false
+
+[functions.notification-config]
+verify_jwt = false
+
+[functions.daily-menstrual-notifications]
+verify_jwt = false
